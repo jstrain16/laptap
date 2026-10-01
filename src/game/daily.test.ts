@@ -9,7 +9,7 @@ import { TIER_COUNT, type Resort } from './resorts.ts';
 import { seededShuffle } from './rng.ts';
 
 const POOL_DATA: [PoolId, Resort[], number][] = [
-  ['ikon', IKON, 80],
+  ['ikon', IKON, 70],
   ['usa', USA, 450],
 ];
 

@@ -1,6 +1,6 @@
 import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap } from 'maplibre-gl';
 
-import type { BoundaryCollection, LatLng } from '../game/geo.js';
+import type { LatLng } from '../game/geo.js';
 import type { Pool } from '../game/pools.js';
 
 export type Basemap = 'satellite' | 'atlas';
@@ -13,15 +13,11 @@ export type Basemap = 'satellite' | 'atlas';
  * Both are declared up front and toggled by layer visibility, so switching
  * never re-creates the style or drops the pins drawn on top of it.
  */
-const BASEMAPS: Record<
-  Basemap,
-  { url: string; maxzoom: number; label: string; border: string }
-> = {
+const BASEMAPS: Record<Basemap, { url: string; maxzoom: number; label: string }> = {
   satellite: {
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     maxzoom: 17,
     label: 'SATELLITE',
-    border: '#eaf9ff',
   },
   atlas: {
     // Esri caps this one at zoom 8; MapLibre upscales beyond that rather than
@@ -29,8 +25,6 @@ const BASEMAPS: Record<
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}',
     maxzoom: 8,
     label: 'ATLAS',
-    // A pale atlas needs dark borders; the light ones vanish into the land.
-    border: '#1d3b52',
   },
 };
 
@@ -40,8 +34,27 @@ export const basemapLabel = (kind: Basemap) => BASEMAPS[kind].label;
 const ATTRIBUTION =
   'Tiles &copy; Esri, Maxar, Earthstar Geographics, USGS &middot; ski areas &copy; OpenSkiMap';
 
+/**
+ * Esri's imagery is a generalised green-and-white mosaic up to zoom 11 and
+ * switches to flat, hazy, dirt-coloured aerial photography at 12. Stopping
+ * short of that keeps the whole game looking like one map — and at zoom 11 a
+ * screen still spans a few kilometres, far finer than the 120km scoring curve
+ * can tell apart.
+ */
+const MAX_ZOOM = 11;
+
+/** A full turn every two minutes: present, but never in the way of a tap. */
+const SECONDS_PER_REVOLUTION = 120;
+
+/**
+ * Width of the rendered globe in CSS pixels at zoom 0 — measured at two very
+ * different viewport sizes, because MapLibre exposes no way to ask and the
+ * value turns out to depend only on zoom. It doubles with each zoom level,
+ * which is what `globeZoom` inverts to fit the planet on any screen.
+ */
+const GLOBE_DIAMETER_AT_Z0 = 156;
+
 const layerId = (kind: Basemap) => `basemap-${kind}`;
-const BOUNDARY_SOURCE = 'boundaries';
 
 export interface GameMap {
   readonly raw: MapLibreMap;
@@ -51,23 +64,25 @@ export interface GameMap {
   onPick(handler: (point: LatLng) => void): void;
   setLocked(locked: boolean): void;
   fitHome(animate?: boolean): void;
-  fitWide(): void;
   frame(points: LatLng[]): void;
+  startSpin(): void;
+  stopSpin(): void;
 }
 
-export async function createMap(
-  container: HTMLElement,
-  pool: Pool,
-  boundaries: BoundaryCollection,
-): Promise<GameMap> {
+export async function createMap(container: HTMLElement, pool: Pool): Promise<GameMap> {
   let basemap: Basemap = 'satellite';
   let locked = false;
   let pickHandler: ((point: LatLng) => void) | null = null;
+  let spinning = false;
 
   const map = new maplibregl.Map({
     container,
     style: {
       version: 8,
+      // MapTap plays on a globe, and for a worldwide question set that is the
+      // honest projection: Mercator would put Niseko and Valle Nevado on wildly
+      // different scales. MapLibre eases into a flat view as you zoom in.
+      projection: { type: 'globe' },
       sources: {
         'basemap-satellite': {
           type: 'raster',
@@ -81,8 +96,9 @@ export async function createMap(
           tileSize: 256,
           maxzoom: BASEMAPS.atlas.maxzoom,
         },
-        [BOUNDARY_SOURCE]: { type: 'geojson', data: boundaries as never },
       },
+      // No borders drawn anywhere. The boundary data still decides the scoring
+      // floors, but showing the lines would hand you the country for free.
       layers: [
         { id: 'bg', type: 'background', paint: { 'background-color': '#060910' } },
         {
@@ -97,33 +113,28 @@ export async function createMap(
           source: 'basemap-atlas',
           layout: { visibility: 'none' },
         },
-        {
-          id: 'boundary-lines',
-          type: 'line',
-          source: BOUNDARY_SOURCE,
-          paint: {
-            // Light enough to read over both basemaps without competing with
-            // the terrain, which is the thing you actually navigate by. Held up
-            // at low zoom, where a hairline over satellite imagery disappears
-            // exactly when you most need the borders to aim with.
-            'line-color': BASEMAPS.satellite.border,
-            'line-width': ['interpolate', ['linear'], ['zoom'], 1.5, 0.7, 4, 1, 9, 1.8],
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 1.5, 0.65, 6, 0.45],
-          },
-        },
       ],
+      sky: {
+        'sky-color': '#0a1424',
+        'horizon-color': '#1d4a63',
+        'fog-color': '#060910',
+        'sky-horizon-blend': 0.6,
+        'horizon-fog-blend': 0.6,
+      },
     },
-    bounds: pool.home,
-    minZoom: 1.2,
-    maxZoom: 13,
+    // Low enough that a whole globe fits inside a narrow phone screen: the
+    // rendered globe radius is 128 * 2^zoom pixels, so a 375px viewport needs
+    // to reach about 0.4 before the planet stops overflowing the sides.
+    minZoom: 0,
+    maxZoom: MAX_ZOOM,
     attributionControl: { compact: true, customAttribution: ATTRIBUTION },
     dragRotate: false,
     pitchWithRotate: false,
     touchZoomRotate: true,
-    renderWorldCopies: false,
+    // A tap that lands a pin should not also double-tap-zoom the globe.
+    doubleClickZoom: false,
   });
   map.touchZoomRotate.disableRotation();
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
   // Handy when a camera or tile problem needs poking at from the console.
   // Not `window.map` — the <div id="map"> already owns that name.
@@ -139,6 +150,29 @@ export async function createMap(
     if (locked || !pickHandler) return;
     pickHandler({ lat: e.lngLat.lat, lng: e.lngLat.lng });
   });
+
+  // --- idle rotation ------------------------------------------------------
+
+  /**
+   * Driven off `moveend` rather than a rAF loop, so a user gesture interrupts
+   * the camera the way MapLibre already handles it instead of fighting a
+   * second animation for control.
+   */
+  function step(): void {
+    if (!spinning) return;
+    const center = map.getCenter();
+    center.lng -= 360 / SECONDS_PER_REVOLUTION;
+    map.easeTo({ center, duration: 1000, easing: (n) => n });
+  }
+  map.on('moveend', step);
+
+  // Any deliberate touch stops the rotation: nobody can aim at a moving target,
+  // and mousedown/touchstart land before the click that places the pin.
+  for (const event of ['mousedown', 'touchstart', 'wheel'] as const) {
+    map.on(event, () => {
+      spinning = false;
+    });
+  }
 
   // The crosshair cursor is the whole affordance — it says "tap the map".
   const applyCursor = () => {
@@ -192,14 +226,14 @@ export async function createMap(
    * band. Scaled back if it would leave no viewport at all, since fitBounds
    * throws in that case.
    */
-  function visiblePadding(): maplibregl.PaddingOptions {
+  function visiblePadding(): Required<maplibregl.PaddingOptions> {
     const height = map.getContainer().clientHeight;
     const width = map.getContainer().clientWidth;
     const card = document.querySelector('.card')?.getBoundingClientRect().height ?? 150;
-    const top = 100;
-    const bottom = card + 36;
+    const top = 88;
+    const bottom = card + 28;
     const vScale = Math.min(1, Math.max(0, height - 120) / Math.max(1, top + bottom));
-    const side = width < 520 ? 24 : 60;
+    const side = width < 520 ? 20 : 56;
     const hScale = Math.min(1, Math.max(0, width - 120) / Math.max(1, side * 2));
     return {
       top: top * vScale,
@@ -209,7 +243,36 @@ export async function createMap(
     };
   }
 
-  map.fitBounds(pool.home as LngLatBoundsLike, { padding: visiblePadding(), duration: 0 });
+  /**
+   * The zoom at which the whole globe sits inside the part of the screen the
+   * cards aren't covering. The rendered globe is GLOBE_DIAMETER_AT_Z0 pixels
+   * across at zoom 0 and doubles per zoom level, so this inverts that against
+   * the smaller usable dimension.
+   *
+   * fitBounds cannot do this job: fitting a world-sized bounding box on a tall
+   * phone fits the *width* and lets the planet run off the top and bottom.
+   */
+  function globeZoom(): number {
+    const pad = visiblePadding();
+    const usableW = map.getContainer().clientWidth - pad.left - pad.right;
+    const usableH = map.getContainer().clientHeight - pad.top - pad.bottom;
+    const diameter = Math.max(120, Math.min(usableW, usableH));
+    return Math.max(0, Math.min(4, Math.log2(diameter / GLOBE_DIAMETER_AT_Z0)));
+  }
+
+  function goHome(duration: number): void {
+    if (pool.home.kind === 'globe') {
+      map.easeTo({ center: map.getCenter(), zoom: globeZoom(), duration });
+      return;
+    }
+    map.fitBounds(pool.home.bounds as LngLatBoundsLike, {
+      padding: visiblePadding(),
+      duration,
+      maxZoom: MAX_ZOOM,
+    });
+  }
+
+  goHome(0);
 
   return {
     raw: map,
@@ -218,7 +281,6 @@ export async function createMap(
       if (kind === basemap) return;
       map.setLayoutProperty(layerId(basemap), 'visibility', 'none');
       map.setLayoutProperty(layerId(kind), 'visibility', 'visible');
-      map.setPaintProperty('boundary-lines', 'line-color', BASEMAPS[kind].border);
       basemap = kind;
     },
     onPick(handler) {
@@ -228,14 +290,20 @@ export async function createMap(
       locked = next;
       applyCursor();
     },
-    fitHome(animate = true) {
-      map.fitBounds(pool.home as LngLatBoundsLike, {
-        padding: visiblePadding(),
-        duration: animate ? 600 : 0,
-      });
+    startSpin() {
+      if (spinning) return;
+      spinning = true;
+      // Starting a rotation step now would cancel an in-flight camera move —
+      // which is exactly what happened to the home transition, freezing the
+      // globe at whatever zoom the ease had reached. If something is already
+      // moving, its own `moveend` will pick the rotation up.
+      if (!map.isMoving()) step();
     },
-    fitWide() {
-      map.fitBounds(pool.wide as LngLatBoundsLike, { padding: visiblePadding(), duration: 600 });
+    stopSpin() {
+      spinning = false;
+    },
+    fitHome(animate = true) {
+      goHome(animate ? 600 : 0);
     },
     frame(points) {
       if (points.length === 0) return;

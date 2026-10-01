@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 
   const { resorts, boundaries } = await pool.load();
   const puzzle = puzzleFor(date, pool.id, resorts);
-  const map: GameMap = await createMap($('map'), pool, boundaries);
+  const map: GameMap = await createMap($('map'), pool);
 
   const game = createGame(puzzle, boundaries);
   const markers = new MarkerLayer(map);
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   });
 
   wideButton.textContent = pool.wideLabel;
-  wideButton.addEventListener('click', () => map.fitWide());
+  wideButton.addEventListener('click', () => map.fitHome());
 
   // --- persistence --------------------------------------------------------
 
@@ -80,6 +80,7 @@ async function main(): Promise<void> {
     markers.clear();
     map.setLocked(false);
     map.fitHome();
+    map.startSpin();
     render(
       promptCard(
         game.state.roundIndex + 1,
@@ -94,12 +95,14 @@ async function main(): Promise<void> {
   function showConfirm(): void {
     const resort = game.currentResort();
     if (!resort) return;
+    map.stopSpin();
     render(confirmCard(resort.name, lockIn));
   }
 
   function lockIn(): void {
     const result = game.confirm();
     if (!result) return;
+    map.stopSpin();
     map.setLocked(true);
     markers.reveal(result.resort, result.resort.name, result.guess);
     map.frame([result.guess, result.resort]);
@@ -114,6 +117,7 @@ async function main(): Promise<void> {
 
   function showSummary(): void {
     markers.clear();
+    map.stopSpin();
     map.setLocked(true);
     // Pull back to show every mountain from the run at once.
     map.frame(game.state.results.flatMap((r) => [r.guess, r.resort as LatLng]));

@@ -3,6 +3,10 @@ import type { Resort } from './resorts.js';
 
 export type PoolId = 'ikon' | 'usa';
 
+export type HomeView =
+  | { kind: 'globe' }
+  | { kind: 'bounds'; bounds: [[number, number], [number, number]] };
+
 export interface Pool {
   id: PoolId;
   /** Shown in the header: "laptap #12 · Ikon". */
@@ -12,11 +16,14 @@ export interface Pool {
   /** How the two scoring floors are described on the result card. */
   fineLabel: string;
   coarseLabel: string;
-  /** Where the camera sits between rounds, [[w, s], [e, n]]. */
-  home: [[number, number], [number, number]];
-  /** Label and target for the zoom-out button. */
+  /**
+   * Where the camera sits between rounds. A worldwide pool frames the whole
+   * globe, which is a viewport calculation rather than a bounding box; a
+   * regional pool fits its corner of the map.
+   */
+  home: HomeView;
+  /** Label for the button that returns to the home view. */
   wideLabel: string;
-  wide: [[number, number], [number, number]];
   load(): Promise<{ resorts: Resort[]; boundaries: BoundaryCollection }>;
 }
 
@@ -32,15 +39,8 @@ export const POOLS: Record<PoolId, Pool> = {
     noun: 'Ikon Pass destination',
     fineLabel: 'country',
     coarseLabel: 'continent',
-    home: [
-      [-170, -50],
-      [180, 70],
-    ],
-    wideLabel: 'WORLD',
-    wide: [
-      [-179, -58],
-      [179, 78],
-    ],
+    home: { kind: 'globe' },
+    wideLabel: 'GLOBE',
     async load() {
       const [resorts, boundaries] = await Promise.all([
         import('../data/resorts-ikon.json').then((m) => m.default as Resort[]),
@@ -55,15 +55,14 @@ export const POOLS: Record<PoolId, Pool> = {
     noun: 'US ski area',
     fineLabel: 'state',
     coarseLabel: 'region',
-    home: [
-      [-125.5, 24],
-      [-66.5, 49.8],
-    ],
+    home: {
+      kind: 'bounds',
+      bounds: [
+        [-168, 23],
+        [-66, 64],
+      ],
+    },
     wideLabel: 'FIT USA',
-    wide: [
-      [-168, 23],
-      [-66, 64],
-    ],
     async load() {
       const [resorts, boundaries] = await Promise.all([
         import('../data/resorts-usa.json').then((m) => m.default as Resort[]),

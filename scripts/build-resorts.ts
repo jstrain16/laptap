@@ -396,8 +396,37 @@ async function main() {
       );
     }
     const f = matches[0]!;
-    if (seen.has(f.properties.id)) fail(`Ikon: "${dest.name}" reuses another destination's area`);
+    // Two destinations may share an OpenSkiMap area only when at least one of
+    // them pins its own coordinates; otherwise they would be the same question.
+    if (seen.has(f.properties.id) && !dest.at) {
+      fail(`Ikon: "${dest.name}" reuses another destination's area without an \`at\` override`);
+    }
     seen.add(f.properties.id);
+
+    const c = toCandidate(f);
+    if (!c) fail(`Ikon: "${dest.name}" has no usable geometry`);
+
+    if (dest.at) {
+      // A pinned destination takes its country from where the pin lands, not
+      // from the shared area it borrowed its id from — Cervinia's area is
+      // registered in Switzerland. The pin is hand-placed, so the polygon
+      // lookup is the ground truth here rather than something to check.
+      const hit = boundaryAt({ lat: dest.at[0], lng: dest.at[1] }, countries);
+      if (!hit) fail(`Ikon: "${dest.name}" is pinned at sea (${dest.at})`);
+      ikonCandidates.push({
+        ...c,
+        // The id is a resort's identity everywhere downstream — distinct
+        // questions, the no-repeat cycle, saved games — so a pin that borrows
+        // another destination's area cannot borrow its id as well.
+        id: `${c.id}#${dest.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        name: dest.name,
+        lat: dest.at[0],
+        lng: dest.at[1],
+        country: hit.name,
+        place: hit.name,
+      });
+      continue;
+    }
 
     const place = f.properties.places?.[0];
     if (place?.iso3166_1Alpha2 !== dest.cc) {
@@ -406,17 +435,17 @@ async function main() {
           `${place?.iso3166_1Alpha2 ?? 'nowhere'}, expected ${dest.cc}`,
       );
     }
-    const c = toCandidate(f);
-    if (!c) fail(`Ikon: "${dest.name}" has no usable geometry`);
-    // Ikon's own branding wins over OpenSkiMap's naming — the player is being
-    // asked to find a pass destination, not an OSM object.
+    // The list's own name wins over OpenSkiMap's — the player is being asked
+    // to find "Jackson Hole", not an OSM object.
     ikonCandidates.push({ ...c, name: dest.name });
   }
 
-  // Even fifths: with 80 destinations a skewed split would leave tier 1 so
-  // small that the same handful came round every week.
+  // The list is already in difficulty order — the position in
+  // ikon-destinations.ts is the ranking, and nothing here reorders it. Even
+  // fifths rather than the skewed US cuts: with ~70 entries a narrow top tier
+  // would bring the same handful round every week.
   const ikon = assignTiers(
-    ikonCandidates.sort((a, b) => b.fame - a.fame || a.id.localeCompare(b.id)),
+    ikonCandidates,
     [0.2, 0.4, 0.6, 0.8, 1],
     // Taken from OpenSkiMap rather than from the polygons, so that checking a
     // resort against the polygons below is a real test of the boundary file and
@@ -484,11 +513,12 @@ async function main() {
   checkPool('usa', usa, states, 0.95);
 
   const SPOT_CHECKS: [string, number, number][] = [
-    ['Alta Ski Area', 40.5806, -111.6249],
-    ['Jackson Hole Mountain Resort', 43.6032, -110.85],
+    ['Alta', 40.5806, -111.6249],
+    ['Jackson Hole', 43.6032, -110.85],
     ['Niseko United', 42.863, 140.6773],
     ['Valle Nevado', -33.3383, -70.25],
-    ['Zermatt Matterhorn', 45.9598, 7.7023],
+    ['Zermatt', 46.0207, 7.7491],
+    ['Cervinia', 45.9344, 7.6305],
   ];
   for (const [name, lat, lng] of SPOT_CHECKS) {
     const r = ikon.find((x) => x.name === name);
@@ -510,7 +540,7 @@ async function main() {
   files          resorts-ikon ${size('resorts-ikon.json')}  resorts-usa ${size('resorts-usa.json')}  countries ${size('countries.json')}  states ${size('states.json')}
   ikon spread    ${new Set(ikon.map((r) => r.fine)).size} countries, ${new Set(ikon.map((r) => r.coarse)).size} continents
   ikon tier 1    ${ikon.filter((r) => r.tier === 1).slice(0, 5).map((r) => r.name).join(', ')}
-  ikon tier 5    ${ikon.filter((r) => r.tier === 5).slice(0, 5).map((r) => r.name).join(', ')}
+  ikon tier 5    ${ikon.filter((r) => r.tier === 5).slice(-5).map((r) => r.name).join(', ')}
 `);
 }
 

@@ -57,10 +57,14 @@ export function promptCard(
   const card = el(
     'section',
     { class: 'card panel' },
-    el('div', {
-      class: 'card-kicker',
-      text: `ROUND ${round} OF ${total}${multiplier > 1 ? `  ·  ×${multiplier}` : ''}`,
-    }),
+    el(
+      'div',
+      { class: 'card-kicker kicker-row' },
+      el('span', { text: `ROUND ${round} OF ${total}` }),
+      // The multiplier is the whole reason the later rounds matter, so it gets
+      // its own badge rather than being tacked onto the end of a grey line.
+      multiplier > 1 ? el('span', { class: 'mult', text: `×${multiplier}` }) : null,
+    ),
     title,
     el('p', { class: 'card-sub', text: hint }),
   );
@@ -103,7 +107,7 @@ export function resultCard(
       { class: 'result-line' },
       el('span', { class: 'result-score', text: String(result.baseScore) }),
       result.multiplier > 1
-        ? el('span', { class: 'result-mult', text: ` ×${result.multiplier} = ${result.score}` })
+        ? el('span', { class: 'result-mult' }, el('span', { class: 'mult', text: `×${result.multiplier}` }), el('span', { text: ` = ${result.score}` }))
         : null,
     ),
     bonus ? el('p', { class: 'result-line result-floor', text: bonus }) : null,

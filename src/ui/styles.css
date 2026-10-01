@@ -94,7 +94,12 @@ body {
 
 .chip {
   flex: none;
-  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  /* 36px tall here, 44px on touch below — a 26px chip was an unhittable
+     target next to a globe that swallows every stray tap as a guess. */
+  min-height: 36px;
+  padding: 0 12px;
   font: inherit;
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -103,6 +108,7 @@ body {
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .chip:hover,
@@ -179,6 +185,30 @@ body {
   color: var(--ink-dim);
 }
 
+.kicker-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* The multiplier badge. Rounds 3-5 are worth 2x and 3x, which is the whole
+   shape of the scoring, so it reads as a label rather than a footnote. */
+.mult {
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--bg);
+  background: var(--warn);
+  border-radius: var(--radius);
+}
+
+.result-mult .mult {
+  font-size: 13px;
+  vertical-align: 2px;
+}
+
 .card-title {
   margin: 4px 0 0;
   font-size: 19px;
@@ -203,7 +233,9 @@ body {
 .btn {
   flex: 1 1 0;
   max-width: 220px;
+  min-height: 44px;
   padding: 10px 14px;
+  touch-action: manipulation;
   font: inherit;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -398,6 +430,9 @@ body {
 }
 
 @media (max-width: 520px) {
+  :root {
+    --gutter: 12px;
+  }
   .card-title {
     font-size: 17px;
   }
@@ -408,7 +443,11 @@ body {
   .scorebox-value {
     font-size: 22px;
   }
-  /* The zoom buttons sit under the card stack on a phone — drop them. */
+  .card {
+    padding: 12px 14px;
+  }
+  /* The zoom buttons sit under the card stack on a phone — drop them, the
+     globe pinch-zooms. */
   .maplibregl-ctrl-bottom-right {
     display: none;
   }
@@ -416,6 +455,52 @@ body {
      directly below already names the mountain. */
   .pin-label {
     display: none;
+  }
+  .summary-row .dist {
+    display: none;
+  }
+}
+
+/* Touch devices, at any width: Apple and Google both put the floor at 44px,
+   and a mis-tap here does not just miss a button, it drops a guess pin. */
+@media (hover: none) and (pointer: coarse) {
+  .chip {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+  .btn {
+    min-height: 48px;
+  }
+  .pin {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* Landscape on a phone leaves almost no vertical room; shrink the chrome
+   rather than letting the card eat the globe. */
+@media (max-height: 460px) {
+  .card {
+    padding: 8px 14px;
+  }
+  .card-title {
+    font-size: 16px;
+  }
+  .card-sub,
+  .result-snark {
+    display: none;
+  }
+  .scorebox {
+    top: calc(env(safe-area-inset-top, 0px) + 6px);
+    left: auto;
+    right: var(--gutter);
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .scorebox-value {
+    font-size: 18px;
   }
 }
 
