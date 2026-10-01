@@ -343,6 +343,33 @@ function assignTiers(
   });
 }
 
+/** The longest a player should go without seeing the same two mountains together. */
+const MIN_PAIR_DAYS = 60;
+
+/**
+ * Cumulative fractions for explicit tier sizes. Fails loudly if the sizes do
+ * not add up to the pool, or if any two tiers would realign within
+ * MIN_PAIR_DAYS — that is the property the daily schedule rests on, and it
+ * must not regress silently when the list changes length.
+ */
+function cutsFor(total: number, sizes: readonly number[]): number[] {
+  const sum = sizes.reduce((a, b) => a + b, 0);
+  if (sum !== total) fail(`tier sizes ${sizes.join('+')} = ${sum}, but the pool has ${total}`);
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  for (let i = 0; i < sizes.length; i++) {
+    for (let j = i + 1; j < sizes.length; j++) {
+      const a = sizes[i]!;
+      const b = sizes[j]!;
+      const period = (a * b) / gcd(a, b);
+      if (period < MIN_PAIR_DAYS) {
+        fail(`tiers of ${a} and ${b} realign every ${period} days (< ${MIN_PAIR_DAYS})`);
+      }
+    }
+  }
+  let acc = 0;
+  return sizes.map((n) => (acc += n) / total);
+}
+
 function fail(msg: string): never {
   console.error(`\n  FAILED: ${msg}\n`);
   process.exit(1);
@@ -463,12 +490,18 @@ async function main() {
   }
 
   // The list is already in difficulty order — the position in
-  // ikon-destinations.ts is the ranking, and nothing here reorders it. Even
-  // fifths rather than the skewed US cuts: with ~70 entries a narrow top tier
-  // would bring the same handful round every week.
+  // ikon-destinations.ts is the ranking, and nothing here reorders it.
+  //
+  // Tier sizes are chosen so no two share a short common period. Each tier
+  // is a fixed cycle indexed by day, so two tiers of the same size advance in
+  // lockstep and the same pairs of mountains come round together forever —
+  // with even fifths, Kitzbühel landed next to Hakuba Valley every 14 days.
+  // Two tiers of sizes a and b realign every lcm(a, b) days; these sizes keep
+  // every pair apart for at least MIN_PAIR_DAYS, so each puzzle is a fresh
+  // combination even though each mountain itself returns every 11-18 days.
   const ikon = assignTiers(
     ikonCandidates,
-    [0.2, 0.4, 0.6, 0.8, 1],
+    cutsFor(ikonCandidates.length, [11, 13, 15, 16, 18]),
     (c) => c.country,
     (c) => boundaryAt(c, countries)?.group ?? '',
     // The state rung only exists where the world file has state polygons, so

@@ -6,9 +6,10 @@ import type { RoundResult } from './scoring.js';
  * The canonical address, written into every shared result so the people it
  * gets pasted to can find the game. Hard-coded rather than read from
  * location.href so a result shared from the github.io mirror still points
- * home.
+ * home. Bare, without a scheme — chat apps linkify it either way and it reads
+ * cleaner in a text.
  */
-export const SITE_URL = 'https://laptap.xyz';
+export const SITE = 'laptap.xyz';
 
 /**
  * One emoji per score band, so a result block reads at a glance — a ski day
@@ -34,8 +35,13 @@ export function shareText(
 ): string {
   const blocks = results.map((r) => `${r.baseScore}${bandFor(r.baseScore)}`).join(' ');
   // A non-default pool goes into the link, so friends land on the same set.
-  const link = pool.id === DEFAULT_POOL ? SITE_URL : `${SITE_URL}/?pool=${pool.id}`;
-  return `laptap ${pool.label} · ${shortPuzzleDate(date)}\n${blocks}\nFinal score: ${total}\n${link}`;
+  const link = pool.id === DEFAULT_POOL ? SITE : `${SITE}/?pool=${pool.id}`;
+  return [
+    `LapTap (${pool.shareName} Mode) ${shortPuzzleDate(date)}`,
+    blocks,
+    `Final score: ${total}`,
+    link,
+  ].join('\n');
 }
 
 /**

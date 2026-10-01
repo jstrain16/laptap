@@ -71,6 +71,40 @@ for (const [id, resorts, minSize] of POOL_DATA) {
   });
 }
 
+test('ikon: no pair of mountains shares a puzzle twice within 60 days', () => {
+  // Tier sizes are pairwise coprime for exactly this reason: a player who
+  // plays every day should never feel a puzzle echo an earlier one.
+  const seen = new Map<string, number>();
+  for (let d = 0; d < 60; d++) {
+    const { number, resorts } = puzzleFor(new Date(2026, 9, 1 + d), 'ikon', IKON);
+    for (let i = 0; i < resorts.length; i++) {
+      for (let j = i + 1; j < resorts.length; j++) {
+        const key = [resorts[i]!.id, resorts[j]!.id].sort().join('|');
+        const first = seen.get(key);
+        assert.equal(
+          first,
+          undefined,
+          `${resorts[i]!.name} + ${resorts[j]!.name} appeared together on #${first} and #${number}`,
+        );
+        seen.set(key, number);
+      }
+    }
+  }
+});
+
+test('ikon: no two tiers realign within 60 days', () => {
+  const sizes = Array.from({ length: TIER_COUNT }, (_, i) =>
+    IKON.filter((r) => r.tier === i + 1).length,
+  );
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  for (let i = 0; i < sizes.length; i++) {
+    for (let j = i + 1; j < sizes.length; j++) {
+      const period = (sizes[i]! * sizes[j]!) / gcd(sizes[i]!, sizes[j]!);
+      assert.ok(period >= 60, `tiers ${i + 1} and ${j + 1} (${sizes[i]}, ${sizes[j]}) realign every ${period} days`);
+    }
+  }
+});
+
 test('the two pools ask different questions on the same day', () => {
   const a = puzzleFor(new Date(2026, 9, 1), 'ikon', IKON);
   const b = puzzleFor(new Date(2026, 9, 1), 'usa', USA);

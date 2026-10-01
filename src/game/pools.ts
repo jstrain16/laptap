@@ -24,8 +24,10 @@ export type HomeView =
 
 export interface Pool {
   id: PoolId;
-  /** Shown in the header: "laptap #12 · Ikon". */
+  /** Shown in the header: "laptap #12 · Ikon Pass". */
   label: string;
+  /** The word before "Mode" in a shared result: "LapTap (Ikon Mode)". */
+  shareName: string;
   /** What the prompt is asking for, e.g. "Ikon Pass destination". */
   noun: string;
   /** Geographic rungs, finest first. Their points sum with the closeness points. */
@@ -50,6 +52,7 @@ export const POOLS: Record<PoolId, Pool> = {
   ikon: {
     id: 'ikon',
     label: 'Ikon Pass',
+    shareName: 'Ikon',
     noun: 'Ikon Pass destination',
     rungs: [
       { key: 'region', label: 'state', points: 20, nearKm: 160 },
@@ -69,6 +72,7 @@ export const POOLS: Record<PoolId, Pool> = {
   usa: {
     id: 'usa',
     label: 'All USA',
+    shareName: 'USA',
     noun: 'US ski area',
     rungs: [
       { key: 'fine', label: 'state', points: 40, nearKm: 160 },

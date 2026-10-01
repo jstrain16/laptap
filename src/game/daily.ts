@@ -26,7 +26,11 @@ export interface Puzzle {
 /**
  * The five mountains for a given day, easiest first. Round N comes from tier N,
  * indexed by puzzle number — so a mountain cannot come up again until its whole
- * tier has been used (16 days for the Ikon pool, 49 for the US one).
+ * tier has been used (11-18 days for the Ikon pool, 49 for the US one).
+ *
+ * The Ikon tier sizes are chosen so no two tiers realign for at least 60 days:
+ * although each mountain returns every couple of weeks, no two mountains share
+ * a puzzle again for months — each day is a combination nobody has seen before.
  *
  * The shuffle is seeded per pool, so everyone playing the same pool on the same
  * calendar day gets the same five, with no server involved.
