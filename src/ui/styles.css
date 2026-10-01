@@ -1,0 +1,429 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/* laptap's skin, parodying MapTap's retro terminal: monospace, glowing 2px
+   borders, typewriter reveals. The cyan is pushed towards glacier ice.
+   Every colour lives here, so the whole thing retints from one block. */
+:root {
+  --bg: #060910;
+  --ink: #7fe7ff;
+  --ink-dim: #4a8da3;
+  --panel: rgba(6, 12, 20, 0.92);
+  --edge: #7fe7ff;
+  --glow: rgba(127, 231, 255, 0.35);
+  --good: #7cfc55;
+  --warn: #ffd166;
+  --bad: #ff6b57;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  --gutter: 16px;
+  --radius: 4px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#map {
+  position: fixed;
+  inset: 0;
+}
+
+/* --- chrome ------------------------------------------------------------- */
+
+.panel {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 0 14px var(--glow);
+  backdrop-filter: blur(6px);
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) var(--gutter) 8px;
+  background: linear-gradient(var(--bg) 55%, transparent);
+  pointer-events: none;
+}
+
+.topbar > * {
+  pointer-events: auto;
+}
+
+.topbar-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-shadow: 0 0 10px var(--glow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-title .dim {
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+
+.chip {
+  flex: none;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.chip:hover,
+.chip:focus-visible {
+  background: rgba(127, 231, 255, 0.14);
+  outline: none;
+}
+
+.scorebox {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 46px);
+  left: var(--gutter);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 10px 6px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 0 14px var(--glow);
+}
+
+.scorebox-label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--ink-dim);
+}
+
+.scorebox-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px var(--glow);
+}
+
+/* --- the card stack ----------------------------------------------------- */
+
+.stage {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 20px);
+  pointer-events: none;
+}
+
+.stage > * {
+  pointer-events: auto;
+}
+
+.card {
+  width: min(460px, 100%);
+  padding: 14px 16px;
+  text-align: center;
+  animation: rise 260ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.card-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--ink-dim);
+}
+
+.card-title {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-shadow: 0 0 10px var(--glow);
+}
+
+.card-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.card-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.btn {
+  flex: 1 1 0;
+  max-width: 220px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--bg);
+  background: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 0 0 14px var(--glow);
+  cursor: pointer;
+}
+
+.btn:hover,
+.btn:focus-visible {
+  filter: brightness(1.15);
+  outline: none;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.btn-ghost {
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+.btn-ghost:hover,
+.btn-ghost:focus-visible {
+  background: rgba(127, 231, 255, 0.14);
+  filter: none;
+}
+
+/* --- result card -------------------------------------------------------- */
+
+.result-line {
+  margin: 3px 0;
+  font-size: 13px;
+}
+
+.result-score {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-mult {
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.result-floor {
+  color: var(--good);
+  font-weight: 700;
+}
+
+.result-snark {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* --- summary ------------------------------------------------------------ */
+
+.summary-rows {
+  margin: 10px 0 2px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.summary-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(127, 231, 255, 0.18);
+}
+
+.summary-row .band {
+  flex: none;
+  width: 1.4em;
+}
+
+.summary-row .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-row .dist {
+  flex: none;
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-row .pts {
+  flex: none;
+  min-width: 3.4em;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-total {
+  margin-top: 10px;
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px var(--glow);
+}
+
+.summary-total span {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+/* --- map pins ----------------------------------------------------------- */
+
+.pin {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+}
+
+.pin-guess {
+  background: var(--ink);
+  box-shadow: 0 0 10px var(--ink);
+}
+
+.pin-answer {
+  background: var(--bad);
+  box-shadow: 0 0 10px var(--bad);
+}
+
+.pin-label {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--bad);
+  background: var(--panel);
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+}
+
+/* The typewriter caret, used while text is still being revealed. */
+.typing::after {
+  content: '▌';
+  color: var(--ink-dim);
+  animation: blink 700ms steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* --- maplibre overrides ------------------------------------------------- */
+
+.maplibregl-ctrl-attrib {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.maplibregl-ctrl-bottom-right {
+  margin-bottom: 4px;
+}
+
+.maplibregl-ctrl-group {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(127, 231, 255, 0.3);
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(82%) sepia(28%) saturate(900%) hue-rotate(150deg) brightness(104%);
+}
+
+@media (max-width: 520px) {
+  .card-title {
+    font-size: 17px;
+  }
+  /* "laptap #1 · Octob…" is worse than no date at all. */
+  .topbar-title .dim {
+    display: none;
+  }
+  .scorebox-value {
+    font-size: 22px;
+  }
+  /* The zoom buttons sit under the card stack on a phone — drop them. */
+  .maplibregl-ctrl-bottom-right {
+    display: none;
+  }
+  /* A pin near the edge pushes its label off-screen, and the result card
+     directly below already names the mountain. */
+  .pin-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+  .typing::after {
+    animation: none;
+  }
+}
