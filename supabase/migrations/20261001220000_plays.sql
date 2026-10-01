@@ -1,4 +1,4 @@
--- Anonymous play tracking for laptap. Applied via the Supabase MCP; kept here
+-- Anonymous play tracking for laptap. Applied to the laptap project; kept here
 -- so the schema is in the repo next to the code that writes to it.
 --
 -- One append-only row per event. The site's publishable key may INSERT and
