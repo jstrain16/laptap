@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   const puzzle = puzzleFor(date, pool.id, resorts);
   const map: GameMap = await createMap($('map'), pool);
 
-  const game = createGame(puzzle, boundaries, pool.floors);
+  const game = createGame(puzzle, boundaries, pool.rungs);
   const markers = new MarkerLayer(map);
 
   title.innerHTML =

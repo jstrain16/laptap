@@ -33,31 +33,36 @@ weighted highest — lift count alone puts a Michigan bump with twelve surface l
 
 ## Scoring
 
-Forgiving by design: a player who only ever finds the right continent still totals 400.
+Additive, so almost nothing scores zero. A round's base score (0–100) is the sum of:
 
-A guess scores whichever is higher — its distance, or the best rung of the consolation ladder it
-landed on:
+| | global pool | US pool |
+|---|---|---|
+| right continent | **35** | right ski region **35** |
+| right country | **+20** | — |
+| right state | **+20** | right state **+40** |
+| closeness | **up to +25** | up to +25 |
 
-| rung (global pool) | score | | rung (US pool) | score |
-|---|---|---|---|---|
-| right **state** | 75 | | right **state** | 75 |
-| right **country** | 60 | | right **ski region** | 40 |
-| right **continent** | 40 | | | |
+The rungs stack — a tap in Utah for Snowbird earns state, country *and* continent. Each rung is
+also earned by landing within about 100 miles (300 for the continent), so a tap just across a
+state line or a national border isn't punished, and destinations in countries without state
+polygons can still reach the same maximum.
 
-The state rung exists where there are state polygons — the United States today; another country's
-provinces would slot in given admin-1 geometry for them. Floors only ever lift a weak guess, never
-beat a close one. The ladder lives on each pool in [`src/game/pools.ts`](src/game/pools.ts).
+Closeness runs on a **log scale**, because that's how distance feels: 30 miles off versus 300 is
+one step, 300 versus 3,000 another. It only reaches zero on the far side of the planet. Anything
+within **3 miles** is a bullseye and scores a flat 100.
 
-Distance alone: anything within **3 miles** is a bullseye and scores 100 — ski areas aren't points.
-Beyond that, `100 · e^(−(distance − 3mi) / DECAY_KM)` with `DECAY_KM = 300`, starting from the
-edge of the bullseye so there's no cliff at three miles.
+| global pool | base score |
+|---|---|
+| right state, 20 miles off | ~94 |
+| right country, wrong state, 300 miles off | ~66 |
+| right continent only, 1,000 miles off | ~43 |
+| wrong continent, 5,000 miles off | ~3 |
 
-| off by | ≤3mi | 25km | 50km | 100km | 200km | 400km | 600km | 1000km |
-|---|---|---|---|---|---|---|---|---|
-| score | 100 | 93 | 86 | 73 | 52 | 27 | 14 | 4 |
+A tap that lands in the sea or a lake snaps to the nearest land within about two degrees, so the
+Great Lakes count as North America and the Ligurian Sea as Europe.
 
-So within about 85km you beat the state rung, within about 150km the country rung. `DECAY_KM` is
-the one knob worth turning if that feels off — top of [`src/game/scoring.ts`](src/game/scoring.ts).
+The rung points live on each pool in [`src/game/pools.ts`](src/game/pools.ts); the closeness
+constants at the top of [`src/game/scoring.ts`](src/game/scoring.ts).
 
 ## Daily puzzles
 

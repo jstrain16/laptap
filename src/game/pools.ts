@@ -4,13 +4,18 @@ import type { Resort } from './resorts.js';
 export type PoolId = 'ikon' | 'usa';
 
 /**
- * One rung of a pool's consolation ladder. `key` names which resort/boundary
- * level it compares; `label` is how the result card describes it.
+ * One geographic rung of a pool's scoring. `key` names which resort/boundary
+ * level it compares, `label` is how the result card describes it, and the
+ * points are *added* for each rung the guess gets right — right state, right
+ * country and right continent all stack. A rung is also earned by landing
+ * within `nearKm` of the mountain, so a tap just across a state line or a
+ * national border is not punished.
  */
-export interface Floor {
+export interface Rung {
   key: 'region' | 'fine' | 'coarse';
   label: string;
-  value: number;
+  points: number;
+  nearKm: number;
 }
 
 export type HomeView =
@@ -23,11 +28,8 @@ export interface Pool {
   label: string;
   /** What the prompt is asking for, e.g. "Ikon Pass destination". */
   noun: string;
-  /**
-   * Consolation floors, finest first. A guess that lands in the right place
-   * at some level scores at least that rung's value, however far off it was.
-   */
-  floors: Floor[];
+  /** Geographic rungs, finest first. Their points sum with the closeness points. */
+  rungs: Rung[];
   /**
    * Where the camera sits between rounds. A worldwide pool frames the whole
    * globe, which is a viewport calculation rather than a bounding box; a
@@ -49,10 +51,10 @@ export const POOLS: Record<PoolId, Pool> = {
     id: 'ikon',
     label: 'Ikon Pass',
     noun: 'Ikon Pass destination',
-    floors: [
-      { key: 'region', label: 'state', value: 75 },
-      { key: 'fine', label: 'country', value: 60 },
-      { key: 'coarse', label: 'continent', value: 40 },
+    rungs: [
+      { key: 'region', label: 'state', points: 20, nearKm: 160 },
+      { key: 'fine', label: 'country', points: 20, nearKm: 160 },
+      { key: 'coarse', label: 'continent', points: 35, nearKm: 480 },
     ],
     home: { kind: 'globe' },
     wideLabel: 'GLOBE',
@@ -68,9 +70,9 @@ export const POOLS: Record<PoolId, Pool> = {
     id: 'usa',
     label: 'All USA',
     noun: 'US ski area',
-    floors: [
-      { key: 'fine', label: 'state', value: 75 },
-      { key: 'coarse', label: 'region', value: 40 },
+    rungs: [
+      { key: 'fine', label: 'state', points: 40, nearKm: 160 },
+      { key: 'coarse', label: 'region', points: 35, nearKm: 480 },
     ],
     home: {
       kind: 'bounds',

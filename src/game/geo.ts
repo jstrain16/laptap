@@ -118,3 +118,29 @@ export function boundaryAt(
   }
   return null;
 }
+
+/**
+ * Like `boundaryAt`, but a tap that lands in the sea or a lake resolves to the
+ * nearest land within about two degrees. A tap in the Great Lakes for a
+ * Michigan resort, or just off the Italian coast, should still count as the
+ * right part of the world — polygon containment alone scored those as nothing.
+ */
+export function boundaryNear(
+  point: LatLng,
+  boundaries: BoundaryCollection,
+): BoundaryFeature['properties'] | null {
+  const direct = boundaryAt(point, boundaries);
+  if (direct) return direct;
+  const cosLat = Math.max(0.2, Math.cos((point.lat * Math.PI) / 180));
+  for (const deg of [0.25, 0.5, 1, 2]) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const hit = boundaryAt(
+        { lat: point.lat + deg * Math.sin(a), lng: point.lng + (deg * Math.cos(a)) / cosLat },
+        boundaries,
+      );
+      if (hit) return hit;
+    }
+  }
+  return null;
+}

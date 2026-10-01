@@ -138,11 +138,11 @@ test('?pool selects the question set and defaults to Ikon', () => {
   assert.equal(poolFromQuery('?pool=nonsense').id, 'ikon');
   assert.equal(poolFromQuery('').id, 'ikon');
   assert.deepEqual(
-    POOLS.ikon.floors.map((f) => f.label),
+    POOLS.ikon.rungs.map((f) => f.label),
     ['state', 'country', 'continent'],
   );
   assert.deepEqual(
-    POOLS.usa.floors.map((f) => f.label),
+    POOLS.usa.rungs.map((f) => f.label),
     ['state', 'region'],
   );
 });

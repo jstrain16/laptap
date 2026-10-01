@@ -7,57 +7,52 @@ import { POOLS } from './pools.ts';
 import {
   BULLSEYE_KM,
   BULLSEYE_MILES,
-  DECAY_KM,
-  FLOOR_CAP,
   MAX_SCORE,
   MULTIPLIERS,
-  distanceScore,
-  floorNote,
+  PROXIMITY_FAR_KM,
+  PROXIMITY_POINTS,
+  breakdown,
+  proximityPoints,
   scoreRound,
   totalScore,
 } from './scoring.ts';
 
 const alta = byName(USA, 'Alta Ski Area');
-const killington = byName(USA, 'Killington Resort');
 const niseko = byName(IKON, 'Niseko United');
 const snowbird = byName(IKON, 'Snowbird');
+const palisades = byName(IKON, 'Palisades Tahoe');
 
-const ikonFloor = (label: string) => POOLS.ikon.floors.find((f) => f.label === label)!.value;
-const usaFloor = (label: string) => POOLS.usa.floors.find((f) => f.label === label)!.value;
+const ikonRung = (label: string) => POOLS.ikon.rungs.find((r) => r.label === label)!.points;
+const ikonGeoMax = POOLS.ikon.rungs.reduce((a, r) => a + r.points, 0);
+const earnedLabels = (r: ReturnType<typeof scoreRound>) => r.earned.map((e) => e.label);
+
+// --- closeness ---------------------------------------------------------------
 
 test('anything inside the three-mile bullseye scores a full 100', () => {
   assert.equal(BULLSEYE_MILES, 3);
-  assert.equal(distanceScore(0), 100);
-  assert.equal(distanceScore(BULLSEYE_KM * 0.5), 100);
-  assert.equal(distanceScore(BULLSEYE_KM), 100);
-  // ...and the curve picks up smoothly from the edge, with no cliff.
-  assert.ok(distanceScore(BULLSEYE_KM + 0.5) < 100);
-  assert.ok(distanceScore(BULLSEYE_KM + 0.5) > 99.5);
+  for (const km of [0, BULLSEYE_KM * 0.5, BULLSEYE_KM]) {
+    const r = scoreRound(snowbird, { lat: snowbird.lat, lng: snowbird.lng + km / 85 }, 0, COUNTRIES, POOLS.ikon.rungs);
+    assert.ok(r.distanceKm <= BULLSEYE_KM + 0.01);
+    assert.equal(r.baseScore, 100);
+    assert.ok(r.bullseye);
+    assert.equal(breakdown(r), 'bullseye');
+  }
 });
 
-test('score decreases monotonically beyond the bullseye and tends to zero', () => {
+test('closeness points fall on a log scale and never quite reach zero before the far side', () => {
+  assert.equal(proximityPoints(0), PROXIMITY_POINTS);
+  assert.equal(proximityPoints(BULLSEYE_KM), PROXIMITY_POINTS);
   let prev = Infinity;
-  for (const km of [BULLSEYE_KM, 10, 25, 50, 100, 200, 400, 800, 2000, 5000]) {
-    const s = distanceScore(km);
-    assert.ok(s < prev, `${km}km should score below ${prev}`);
-    prev = s;
+  for (const km of [BULLSEYE_KM, 10, 50, 100, 500, 1000, 5000, 10000]) {
+    const p = proximityPoints(km);
+    assert.ok(p < prev, `${km}km should score below ${prev}`);
+    assert.ok(p > 0, `${km}km should still be worth something`);
+    prev = p;
   }
-  assert.ok(distanceScore(20000) < 0.001);
-});
-
-test('the decay curve matches the documented table', () => {
-  for (const [km, want] of [
-    [25, 93],
-    [50, 86],
-    [100, 73],
-    [200, 52],
-    [400, 27],
-    [600, 14],
-    [1000, 4],
-  ] as [number, number][]) {
-    assert.equal(Math.round(distanceScore(km)), want, `${km}km`);
-  }
-  assert.equal(DECAY_KM, 300);
+  assert.equal(proximityPoints(PROXIMITY_FAR_KM), 0);
+  // One order of magnitude of distance costs about the same at every scale.
+  const step = (a: number, b: number) => proximityPoints(a) - proximityPoints(b);
+  assert.ok(Math.abs(step(30, 300) - step(300, 3000)) < 0.5);
 });
 
 test('multipliers sum to 10 so a perfect game is exactly 1000', () => {
@@ -67,135 +62,121 @@ test('multipliers sum to 10 so a perfect game is exactly 1000', () => {
 
 test('a bullseye on every round totals MAX_SCORE', () => {
   const rounds = puzzleFor(new Date(2026, 11, 25), 'ikon', IKON).resorts.map((r, i) =>
-    scoreRound(r, { lat: r.lat, lng: r.lng }, i, COUNTRIES, POOLS.ikon.floors),
+    scoreRound(r, { lat: r.lat, lng: r.lng }, i, COUNTRIES, POOLS.ikon.rungs),
   );
   assert.equal(totalScore(rounds), MAX_SCORE);
 });
 
+test('the geographic rungs cannot reach 100 without closeness', () => {
+  assert.ok(ikonGeoMax < 100 && ikonGeoMax + PROXIMITY_POINTS <= 100);
+  const usaGeo = POOLS.usa.rungs.reduce((a, r) => a + r.points, 0);
+  assert.ok(usaGeo < 100 && usaGeo + PROXIMITY_POINTS <= 100);
+});
+
+// --- the rungs stack --------------------------------------------------------
+
+test('right state earns state, country and continent together', () => {
+  // St. George, far southern Utah — ~400km from Snowbird, but still Utah.
+  const r = scoreRound(snowbird, { lat: 37.1, lng: -113.58 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.ok(r.distanceKm > 350);
+  assert.deepEqual(earnedLabels(r), ['state', 'country', 'continent']);
+  assert.equal(r.earned[0]?.name, 'Utah');
+  assert.equal(r.baseScore, ikonGeoMax + r.proximity);
+  assert.match(breakdown(r), /^\+35 continent · \+20 country · \+20 state · \+\d+ closeness$/);
+});
+
+test('right country, wrong state, earns country and continent', () => {
+  // Kansas: wrong state for Snowbird, still the United States.
+  const r = scoreRound(snowbird, { lat: 38.5, lng: -98.4 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessRegion, 'Kansas');
+  assert.deepEqual(earnedLabels(r), ['country', 'continent']);
+  assert.equal(r.baseScore, ikonRung('country') + ikonRung('continent') + r.proximity);
+});
+
+test('right continent alone earns the continent rung plus closeness', () => {
+  // Central Mongolia: wrong country for Niseko, still Asia.
+  const r = scoreRound(niseko, { lat: 46.9, lng: 103.8 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessFine, 'Mongolia');
+  assert.deepEqual(earnedLabels(r), ['continent']);
+  assert.equal(r.baseScore, ikonRung('continent') + r.proximity);
+  assert.ok(r.baseScore >= 40, `continent-only should be worth 40ish, got ${r.baseScore}`);
+});
+
+test('wrong continent earns only closeness, and that is nearly nothing', () => {
+  const r = scoreRound(niseko, { lat: -25.3, lng: 133.8 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessCoarse, 'Oceania');
+  assert.deepEqual(earnedLabels(r), []);
+  assert.ok(r.baseScore > 0 && r.baseScore < 10, `got ${r.baseScore}`);
+});
+
+test('a tap just across a border still earns the rung by closeness', () => {
+  // Palisades Tahoe is in California; this is 25km east, in Nevada.
+  const r = scoreRound(palisades, { lat: palisades.lat, lng: palisades.lng + 0.29 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessRegion, 'Nevada');
+  assert.ok(r.distanceKm > 15 && r.distanceKm < 40, `got ${r.distanceKm}km`);
+  assert.deepEqual(earnedLabels(r), ['state', 'country', 'continent']);
+  assert.equal(r.earned[0]?.name, null, 'state earned by closeness, not by place');
+  assert.ok(r.baseScore >= 90, `a 25km miss should still be in the 90s, got ${r.baseScore}`);
+});
+
+test('a tap in the sea snaps to the nearest land', () => {
+  // The Ligurian Sea, 60km off the Italian coast — nowhere near Cervinia,
+  // but unmistakably Europe. Polygon containment alone scored this zero.
+  const cervinia = byName(IKON, 'Cervinia');
+  const r = scoreRound(cervinia, { lat: 43.6, lng: 8.5 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessCoarse, 'Europe');
+  assert.ok(earnedLabels(r).includes('continent'));
+});
+
+test('a tap in the open ocean earns nothing geographic and does not crash', () => {
+  const r = scoreRound(niseko, { lat: 0, lng: -150 }, 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(r.guessFine, null);
+  assert.deepEqual(earnedLabels(r), []);
+  assert.ok(r.baseScore >= 0);
+});
+
 test('a player who only ever finds the continent lands in the 400s', () => {
   // The forgiveness target: "super low" should still be a few hundred, not 50.
-  // One interior point per continent, so every guess is on the right landmass
-  // and never in the right country by accident — except Kansas, which is the
-  // right country for every US resort and so may lift a round to the country
-  // rung. Hence the ceiling.
+  // One interior point per continent, so every guess is on the right landmass.
+  // Kansas is also the right country for every US resort, hence the ceiling.
   const INTERIOR: Record<string, { lat: number; lng: number }> = {
-    'North America': { lat: 38.5, lng: -98.4 }, // Kansas
-    Europe: { lat: 51.0, lng: 10.0 }, // central Germany
-    Asia: { lat: 46.9, lng: 103.8 }, // Mongolia
-    Oceania: { lat: -25.3, lng: 133.8 }, // central Australia
-    'South America': { lat: -10.0, lng: -55.0 }, // Mato Grosso
+    'North America': { lat: 38.5, lng: -98.4 },
+    Europe: { lat: 51.0, lng: 10.0 },
+    Asia: { lat: 46.9, lng: 103.8 },
+    Oceania: { lat: -25.3, lng: 133.8 },
+    'South America': { lat: -10.0, lng: -55.0 },
   };
   const rounds = puzzleFor(new Date(2026, 9, 5), 'ikon', IKON).resorts.map((r, i) => {
     const far = INTERIOR[r.coarse];
     assert.ok(far, `no interior anchor for ${r.coarse}`);
-    return scoreRound(r, far, i, COUNTRIES, POOLS.ikon.floors);
+    return scoreRound(r, far, i, COUNTRIES, POOLS.ikon.rungs);
   });
   for (const r of rounds) {
-    assert.equal(r.guessCoarse, r.resort.coarse, `${r.resort.name}: anchor is off-continent`);
-    assert.ok(r.baseScore >= ikonFloor('continent'), `${r.resort.name} scored ${r.baseScore}`);
+    assert.ok(earnedLabels(r).includes('continent'), `${r.resort.name}: anchor is off-continent`);
+    assert.ok(r.baseScore >= ikonRung('continent'), `${r.resort.name} scored ${r.baseScore}`);
   }
   const total = totalScore(rounds);
-  assert.ok(total >= 400 && total <= 650, `expected 400-650, got ${total}`);
+  assert.ok(total >= 400 && total <= 700, `expected 400-700, got ${total}`);
 });
 
-// --- global pool: state / country / continent ladder ------------------------
+// --- US pool ----------------------------------------------------------------
 
-test('the right state floors a bad guess at the state rung', () => {
-  // St. George, far southern Utah — ~400km from Snowbird, but still Utah.
-  const r = scoreRound(snowbird, { lat: 37.1, lng: -113.58 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.ok(r.distanceKm > 350, `expected a long miss, got ${r.distanceKm}km`);
-  assert.equal(r.guessRegion, 'Utah');
-  assert.equal(r.guessFine, 'United States');
-  assert.equal(r.floor?.label, 'state');
-  assert.equal(r.baseScore, ikonFloor('state'));
-  assert.equal(floorNote(r), `+${r.floorLift} — right state (Utah)`);
-});
-
-test('the right country floors a bad guess at the country rung', () => {
-  // Okinawa — about 2,000km from Niseko, but unmistakably Japan.
-  const r = scoreRound(niseko, { lat: 26.3, lng: 127.8 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.ok(r.distanceKm > 1500);
-  assert.equal(r.guessFine, 'Japan');
-  assert.equal(r.floor?.label, 'country');
-  assert.equal(r.baseScore, ikonFloor('country'));
-  assert.equal(floorNote(r), `+${r.floorLift} — right country (Japan)`);
-});
-
-test('a US guess in the wrong state still gets the country rung', () => {
-  // Kansas: wrong state for Snowbird, still the United States.
-  const r = scoreRound(snowbird, { lat: 38.5, lng: -98.4 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.equal(r.guessRegion, 'Kansas');
-  assert.equal(r.floor?.label, 'country');
-  assert.equal(r.baseScore, ikonFloor('country'));
-});
-
-test('the right continent floors a bad guess at the continent rung', () => {
-  // Central Mongolia: wrong country, still Asia.
-  const r = scoreRound(niseko, { lat: 46.9, lng: 103.8 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.equal(r.guessFine, 'Mongolia');
-  assert.equal(r.guessCoarse, 'Asia');
-  assert.equal(r.floor?.label, 'continent');
-  assert.equal(r.baseScore, ikonFloor('continent'));
-});
-
-test('a guess on the wrong continent gets no floor at all', () => {
-  const r = scoreRound(niseko, { lat: -25.3, lng: 133.8 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.equal(r.guessCoarse, 'Oceania');
-  assert.equal(r.floor, null);
-  assert.ok(r.baseScore < 5);
-});
-
-test('a guess out at sea gets no floor and no crash', () => {
-  const r = scoreRound(niseko, { lat: 0, lng: -150 }, 0, COUNTRIES, POOLS.ikon.floors);
-  assert.equal(r.guessRegion, null);
-  assert.equal(r.guessFine, null);
-  assert.equal(r.guessCoarse, null);
-  assert.equal(r.floor, null);
-});
-
-test('the ladder is ordered finest to coarsest with descending values', () => {
-  for (const pool of Object.values(POOLS)) {
-    const values = pool.floors.map((f) => f.value);
-    assert.deepEqual(values, [...values].sort((a, b) => b - a), pool.id);
-    assert.ok(values.every((v) => v > 0 && v <= FLOOR_CAP && FLOOR_CAP < 100), pool.id);
-  }
-});
-
-// --- US pool: state / ski region --------------------------------------------
-
-test('US pool: the right state floors a bad guess', () => {
-  const r = scoreRound(alta, { lat: 37.1, lng: -113.58 }, 0, STATES, POOLS.usa.floors);
+test('US pool: right state earns state and region', () => {
+  const r = scoreRound(alta, { lat: 37.1, lng: -113.58 }, 0, STATES, POOLS.usa.rungs);
   assert.equal(r.guessFine, 'Utah');
-  assert.equal(r.floor?.label, 'state');
-  assert.equal(r.baseScore, usaFloor('state'));
-  assert.equal(floorNote(r), `+${r.floorLift} — right state (Utah)`);
+  assert.deepEqual(earnedLabels(r), ['state', 'region']);
 });
 
-test('US pool: the right ski region floors a bad guess', () => {
+test('US pool: right ski region alone', () => {
   // Rural Wyoming: wrong state, but still the Rockies.
-  const r = scoreRound(alta, { lat: 42.85, lng: -106.3 }, 0, STATES, POOLS.usa.floors);
+  const r = scoreRound(alta, { lat: 42.85, lng: -106.3 }, 0, STATES, POOLS.usa.rungs);
   assert.equal(r.guessFine, 'Wyoming');
-  assert.equal(r.floor?.label, 'region');
-  assert.equal(r.baseScore, usaFloor('region'));
-});
-
-test('a floor never beats a genuinely close tap', () => {
-  // 10km from Killington, still in Vermont: the raw score must win.
-  const r = scoreRound(
-    killington,
-    { lat: killington.lat + 0.09, lng: killington.lng },
-    0,
-    STATES,
-    POOLS.usa.floors,
-  );
-  assert.ok(r.distanceKm < 15);
-  assert.equal(r.floor, null, 'a close tap should not be reported as a floor');
-  assert.ok(r.baseScore > usaFloor('state') && r.baseScore <= 100);
+  assert.deepEqual(earnedLabels(r), ['region']);
 });
 
 test('round multipliers are applied in order', () => {
   for (const [i, mult] of MULTIPLIERS.entries()) {
-    const r = scoreRound(alta, { lat: alta.lat, lng: alta.lng }, i, STATES, POOLS.usa.floors);
+    const r = scoreRound(alta, { lat: alta.lat, lng: alta.lng }, i, STATES, POOLS.usa.rungs);
     assert.equal(r.multiplier, mult);
     assert.equal(r.score, 100 * mult);
   }

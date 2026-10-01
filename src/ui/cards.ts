@@ -1,5 +1,5 @@
 import { kmToMiles } from '../game/geo.js';
-import { MAX_SCORE, floorNote, type RoundResult } from '../game/scoring.js';
+import { MAX_SCORE, breakdown, type RoundResult } from '../game/scoring.js';
 import { bandFor } from '../game/share.js';
 import { button, el, typewriter } from './dom.js';
 
@@ -27,13 +27,15 @@ const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)
  * "+25 — right country". When a floor fires it decides the tone instead.
  */
 function snarkFor(result: RoundResult): string {
-  if (result.floor) {
-    const { label } = result.floor;
+  // Below ~50km the distance bands say it better; above, a rung that fired
+  // sets the tone so the line never contradicts the breakdown beneath it.
+  const finest = result.earned[0];
+  if (finest && result.distanceKm > 50) {
+    const { label } = finest;
     return pick([
       `Right ${label}, wrong mountain.`,
       `You found the ${label}, at least.`,
       `The correct ${label}. Nothing more.`,
-      'Close enough to count. Barely.',
     ]);
   }
   return pick(SNARK.find(([max]) => result.distanceKm < max)?.[1] ?? ['']);
@@ -79,7 +81,7 @@ export function confirmCard(resortName: string, onConfirm: () => void): HTMLElem
 }
 
 export function resultCard(result: RoundResult, isLast: boolean, onNext: () => void): HTMLElement {
-  const bonus = floorNote(result);
+  const how = breakdown(result);
   const next = button(isLast ? 'SEE RESULTS' : 'NEXT MOUNTAIN', onNext);
 
   return el(
@@ -99,7 +101,7 @@ export function resultCard(result: RoundResult, isLast: boolean, onNext: () => v
         ? el('span', { class: 'result-mult' }, el('span', { class: 'mult', text: `×${result.multiplier}` }), el('span', { text: ` = ${result.score}` }))
         : null,
     ),
-    bonus ? el('p', { class: 'result-line result-floor', text: bonus }) : null,
+    el('p', { class: 'result-line result-floor', text: how }),
     el('p', { class: 'result-snark', text: snarkFor(result) }),
     el('div', { class: 'card-actions' }, next),
   );
