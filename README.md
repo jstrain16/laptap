@@ -48,11 +48,13 @@ The state rung exists where there are state polygons — the United States today
 provinces would slot in given admin-1 geometry for them. Floors only ever lift a weak guess, never
 beat a close one. The ladder lives on each pool in [`src/game/pools.ts`](src/game/pools.ts).
 
-Distance alone: `100 · e^(−distance / DECAY_KM)`, with `DECAY_KM = 300`.
+Distance alone: anything within **3 miles** is a bullseye and scores 100 — ski areas aren't points.
+Beyond that, `100 · e^(−(distance − 3mi) / DECAY_KM)` with `DECAY_KM = 300`, starting from the
+edge of the bullseye so there's no cliff at three miles.
 
-| off by | 0 | 25km | 50km | 100km | 200km | 400km | 600km | 1000km |
+| off by | ≤3mi | 25km | 50km | 100km | 200km | 400km | 600km | 1000km |
 |---|---|---|---|---|---|---|---|---|
-| score | 100 | 92 | 85 | 72 | 51 | 26 | 14 | 4 |
+| score | 100 | 93 | 86 | 73 | 52 | 27 | 14 | 4 |
 
 So within about 85km you beat the state rung, within about 150km the country rung. `DECAY_KM` is
 the one knob worth turning if that feels off — top of [`src/game/scoring.ts`](src/game/scoring.ts).

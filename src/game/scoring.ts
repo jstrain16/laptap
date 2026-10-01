@@ -1,14 +1,29 @@
-import { boundaryAt, haversineKm, type BoundaryCollection, type LatLng } from './geo.js';
+import {
+  boundaryAt,
+  haversineKm,
+  KM_PER_MILE,
+  type BoundaryCollection,
+  type LatLng,
+} from './geo.js';
 import type { Floor } from './pools.js';
 import type { Resort } from './resorts.js';
 
 /**
+ * Anything within this of the mountain is a bullseye and scores 100. Ski
+ * areas are not points — a tap on the far end of Snowmass is not a miss.
+ */
+export const BULLSEYE_MILES = 3;
+export const BULLSEYE_KM = BULLSEYE_MILES * KM_PER_MILE;
+
+/**
  * MapTap scores a guess with `exp(-(d / 16250) * 3.5)`, where 16,250km is half
- * the Earth's circumference. laptap keeps that shape but retunes it. This is
- * the one knob worth turning if the game plays too hard or too soft.
+ * the Earth's circumference. laptap keeps that shape but retunes it, and the
+ * curve starts at the edge of the bullseye rather than at the pin, so there is
+ * no cliff at three miles. This is the one knob worth turning if the game
+ * plays too hard or too soft.
  *
- *     0km -> 100    50km -> 85    200km -> 51    600km -> 14
- *    25km ->  92   100km -> 72    400km -> 26   1000km ->  4
+ *   <=3mi -> 100    50km -> 86    200km -> 52    600km -> 14
+ *    25km ->  93   100km -> 73    400km -> 27   1000km ->  4
  */
 export const DECAY_KM = 300;
 
@@ -43,7 +58,8 @@ export interface RoundResult {
 
 /** Raw distance curve, 0-100. Exported so the tests can hit it directly. */
 export function distanceScore(distanceKm: number): number {
-  return 100 * Math.exp(-distanceKm / DECAY_KM);
+  const beyond = Math.max(0, distanceKm - BULLSEYE_KM);
+  return 100 * Math.exp(-beyond / DECAY_KM);
 }
 
 export function scoreRound(

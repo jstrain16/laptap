@@ -5,6 +5,8 @@ import { puzzleFor } from './daily.ts';
 import { COUNTRIES, IKON, STATES, USA, byName } from './fixtures.test-util.ts';
 import { POOLS } from './pools.ts';
 import {
+  BULLSEYE_KM,
+  BULLSEYE_MILES,
   DECAY_KM,
   FLOOR_CAP,
   MAX_SCORE,
@@ -23,13 +25,19 @@ const snowbird = byName(IKON, 'Snowbird');
 const ikonFloor = (label: string) => POOLS.ikon.floors.find((f) => f.label === label)!.value;
 const usaFloor = (label: string) => POOLS.usa.floors.find((f) => f.label === label)!.value;
 
-test('a perfect tap scores 100', () => {
+test('anything inside the three-mile bullseye scores a full 100', () => {
+  assert.equal(BULLSEYE_MILES, 3);
   assert.equal(distanceScore(0), 100);
+  assert.equal(distanceScore(BULLSEYE_KM * 0.5), 100);
+  assert.equal(distanceScore(BULLSEYE_KM), 100);
+  // ...and the curve picks up smoothly from the edge, with no cliff.
+  assert.ok(distanceScore(BULLSEYE_KM + 0.5) < 100);
+  assert.ok(distanceScore(BULLSEYE_KM + 0.5) > 99.5);
 });
 
-test('score decreases monotonically with distance and tends to zero', () => {
+test('score decreases monotonically beyond the bullseye and tends to zero', () => {
   let prev = Infinity;
-  for (const km of [0, 1, 10, 25, 50, 100, 200, 400, 800, 2000, 5000]) {
+  for (const km of [BULLSEYE_KM, 10, 25, 50, 100, 200, 400, 800, 2000, 5000]) {
     const s = distanceScore(km);
     assert.ok(s < prev, `${km}km should score below ${prev}`);
     prev = s;
@@ -39,11 +47,11 @@ test('score decreases monotonically with distance and tends to zero', () => {
 
 test('the decay curve matches the documented table', () => {
   for (const [km, want] of [
-    [25, 92],
-    [50, 85],
-    [100, 72],
-    [200, 51],
-    [400, 26],
+    [25, 93],
+    [50, 86],
+    [100, 73],
+    [200, 52],
+    [400, 27],
     [600, 14],
     [1000, 4],
   ] as [number, number][]) {
