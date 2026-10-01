@@ -131,6 +131,12 @@ Read it in the Supabase dashboard via three views:
 | `mountain_stats` | per mountain: plays, average score, average miss in miles, bullseyes |
 | `overall_stats` | unique players, games finished, days with play |
 
+**Leaderboard.** After finishing, a player can claim a nickname — first come, first served, no
+email or password — and see today's board for that pool. The browser's random id is the identity,
+so a name is tied to the device it was claimed on. The `leaderboard` view (nickname and score per
+day per pool) is the one thing readable through the site; raw plays and the `players` table are
+not.
+
 The schema is in [`supabase/migrations/`](supabase/migrations/). The client is
 [`src/game/track.ts`](src/game/track.ts); with no `VITE_SUPABASE_*` configured it's a no-op, so
 local dev and forks run with analytics off (see `.env.example`).

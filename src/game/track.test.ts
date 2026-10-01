@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { COUNTRIES, IKON } from './fixtures.test-util.ts';
 import { POOLS } from './pools.ts';
 import { scoreRound, totalScore } from './scoring.ts';
-import { buildEvent } from './track.ts';
+import { buildEvent, rankOf, validName } from './track.ts';
 
 const ids = { player: 'p-1', device: 'desktop' as const, tz: 'America/Denver' };
 const date = new Date(2026, 9, 7);
@@ -44,4 +44,28 @@ test('the date is the local calendar day, not UTC', () => {
   const e = buildEvent('start', POOLS.epic, 8, new Date(2026, 9, 7, 23, 30), undefined, undefined, ids);
   assert.equal(e.puzzle_date, '2026-10-07');
   assert.equal(e.pool, 'epic');
+});
+
+test('nicknames are trimmed, length-bounded and free of markup', () => {
+  assert.equal(validName('  Joe  '), 'Joe');
+  assert.equal(validName('joe   strain'), 'joe strain');
+  assert.equal(validName("O'Brien-Smith_2"), "O'Brien-Smith_2");
+  assert.equal(validName('Zoë'), 'Zoë');
+  assert.equal(validName('J'), null, 'too short');
+  assert.equal(validName('a'.repeat(21)), null, 'too long');
+  assert.equal(validName('<b>joe</b>'), null, 'markup');
+  assert.equal(validName('joe@example.com'), null, 'no emails on a public board');
+  assert.equal(validName('   '), null);
+});
+
+test('rank is 1-based position on a best-first board, or null', () => {
+  const rows = [
+    { player_id: 'a', name: 'A', total: 900 },
+    { player_id: 'b', name: 'B', total: 700 },
+    { player_id: 'c', name: 'C', total: 700 },
+  ];
+  assert.equal(rankOf(rows, 'a'), 1);
+  assert.equal(rankOf(rows, 'c'), 3);
+  assert.equal(rankOf(rows, 'zz'), null);
+  assert.equal(rankOf([], 'a'), null);
 });

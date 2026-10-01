@@ -102,22 +102,111 @@ export function buildEvent(
   };
 }
 
-export function track(row: PlayEvent): void {
+const headers = () => ({
+  apikey: KEY!,
+  Authorization: `Bearer ${KEY}`,
+  'Content-Type': 'application/json',
+});
+
+/**
+ * Resolves once the row is sent (or immediately if tracking is off), so the
+ * summary can wait for a finish to land before asking for the leaderboard.
+ * Never rejects.
+ */
+export async function track(row: PlayEvent): Promise<void> {
   if (!URL || !KEY) return;
   try {
-    void fetch(`${URL}/rest/v1/plays`, {
+    await fetch(`${URL}/rest/v1/plays`, {
       method: 'POST',
-      headers: {
-        apikey: KEY,
-        Authorization: `Bearer ${KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
+      headers: { ...headers(), Prefer: 'return=minimal' },
       body: JSON.stringify(row),
       // Survives the tab closing right after the summary appears.
       keepalive: true,
-    }).catch(() => {});
+    });
   } catch {
     /* never let analytics touch the game */
   }
+}
+
+// --- nicknames and the leaderboard ------------------------------------------
+
+const NAME_KEY = 'laptap.name';
+export const NAME_MIN = 2;
+export const NAME_MAX = 20;
+
+/** The nickname this browser has claimed, if any. */
+export function savedName(): string | null {
+  try {
+    return localStorage.getItem(NAME_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pure: what a nickname may look like. Mirrors the database CHECK so a bad
+ * name is caught before a round trip. Letters, digits, spaces and a little
+ * punctuation; nothing that could pretend to be markup on the board.
+ */
+export function validName(raw: string): string | null {
+  const name = raw.trim().replace(/\s+/g, ' ');
+  if (name.length < NAME_MIN || name.length > NAME_MAX) return null;
+  if (!/^[\p{L}\p{N} _.'-]+$/u.test(name)) return null;
+  return name;
+}
+
+export type ClaimResult = 'ok' | 'taken' | 'invalid' | 'offline';
+
+/** Claims a nickname for this browser's id. First come, first served. */
+export async function claimName(raw: string): Promise<ClaimResult> {
+  const name = validName(raw);
+  if (!name) return 'invalid';
+  if (!URL || !KEY) return 'offline';
+  try {
+    const res = await fetch(`${URL}/rest/v1/players`, {
+      method: 'POST',
+      headers: { ...headers(), Prefer: 'return=minimal' },
+      body: JSON.stringify({ id: playerId(), name }),
+    });
+    if (res.ok) {
+      localStorage.setItem(NAME_KEY, name);
+      return 'ok';
+    }
+    // 409: the unique index on lower(name) — someone else has it (or this
+    // browser already has a different one, which the same index also stops).
+    return res.status === 409 ? 'taken' : 'offline';
+  } catch {
+    return 'offline';
+  }
+}
+
+export interface LeaderboardRow {
+  player_id: string;
+  name: string;
+  total: number;
+}
+
+/** Today's board for one pool, best score first. Empty if tracking is off. */
+export async function fetchLeaderboard(pool: Pool, date: Date): Promise<LeaderboardRow[]> {
+  if (!URL || !KEY) return [];
+  try {
+    const q = new URLSearchParams({
+      select: 'player_id,name,total',
+      pool: `eq.${pool.id}`,
+      puzzle_date: `eq.${isoDate(date)}`,
+      order: 'total.desc,name.asc',
+      limit: '100',
+    });
+    const res = await fetch(`${URL}/rest/v1/leaderboard?${q}`, { headers: headers() });
+    if (!res.ok) return [];
+    return (await res.json()) as LeaderboardRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Pure: 1-based rank of a player on a board sorted best-first, or null. */
+export function rankOf(rows: readonly LeaderboardRow[], player: string): number | null {
+  const i = rows.findIndex((r) => r.player_id === player);
+  return i === -1 ? null : i + 1;
 }

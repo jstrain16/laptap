@@ -1,5 +1,12 @@
 import { kmToMiles } from '../game/geo.js';
 import { MAX_SCORE, breakdown, type RoundResult } from '../game/scoring.js';
+import {
+  NAME_MAX,
+  rankOf,
+  validName,
+  type ClaimResult,
+  type LeaderboardRow,
+} from '../game/track.js';
 import { bandFor } from '../game/share.js';
 import { button, el, typewriter } from './dom.js';
 
@@ -107,10 +114,104 @@ export function resultCard(result: RoundResult, isLast: boolean, onNext: () => v
   );
 }
 
+/** What the summary needs to show today's board, or null when tracking is off. */
+export interface LeaderboardHooks {
+  player: string;
+  name: string | null;
+  load: () => Promise<LeaderboardRow[]>;
+  claim: (name: string) => Promise<ClaimResult>;
+}
+
+const TOP = 10;
+
+function boardList(rows: LeaderboardRow[], player: string): HTMLElement {
+  if (rows.length === 0) {
+    return el('p', { class: 'card-sub', text: 'Nobody else has finished yet. You could be first.' });
+  }
+  const mine = rankOf(rows, player);
+  const shown = rows.slice(0, TOP);
+  // Always show the player's own row, even if they're outside the top ten.
+  if (mine && mine > TOP) shown.push(rows[mine - 1]!);
+  return el(
+    'ol',
+    { class: 'board' },
+    ...shown.map((r) =>
+      el(
+        'li',
+        { class: `board-row${r.player_id === player ? ' me' : ''}` },
+        el('span', { class: 'board-rank', text: `${rankOf(rows, r.player_id)}` }),
+        el('span', { class: 'board-name', text: r.name }),
+        el('span', { class: 'board-score', text: String(r.total) }),
+      ),
+    ),
+  );
+}
+
+/**
+ * The join prompt becomes the board in place once a name is claimed, so the
+ * card never jumps. Any failure degrades to a quiet line, never an error.
+ */
+function leaderboardSection(hooks: LeaderboardHooks): HTMLElement {
+  const section = el('div', { class: 'board-section' });
+  const heading = el('div', { class: 'card-kicker', text: "TODAY'S LEADERBOARD" });
+  const body = el('div');
+  section.append(heading, body);
+
+  const showBoard = async () => {
+    body.replaceChildren(el('p', { class: 'card-sub', text: 'Loading…' }));
+    const rows = await hooks.load();
+    const mine = rankOf(rows, hooks.player);
+    body.replaceChildren(
+      boardList(rows, hooks.player),
+      mine
+        ? el('p', { class: 'card-sub', text: `You're #${mine} of ${rows.length} as ${hooks.name}.` })
+        : el('p', { class: 'card-sub', text: `Playing as ${hooks.name}.` }),
+    );
+  };
+
+  const showJoin = () => {
+    const input = el('input', { class: 'board-input', type: 'text' }) as HTMLInputElement;
+    input.placeholder = 'nickname';
+    input.maxLength = NAME_MAX;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    const note = el('p', { class: 'card-sub', text: 'Pick a nickname — it shows on the board.' });
+    const join = button('JOIN', async () => {
+      const name = validName(input.value);
+      if (!name) {
+        note.textContent = '2–20 letters, numbers, spaces or - _ . \'';
+        return;
+      }
+      join.disabled = true;
+      const result = await hooks.claim(name);
+      join.disabled = false;
+      if (result === 'ok') {
+        hooks.name = name;
+        void showBoard();
+      } else if (result === 'taken') {
+        note.textContent = `"${name}" is taken — try another.`;
+      } else if (result === 'invalid') {
+        note.textContent = 'That name has characters the board can’t show.';
+      } else {
+        note.textContent = "Couldn't reach the leaderboard. Your score is saved; try again later.";
+      }
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') join.click();
+    });
+    body.replaceChildren(el('div', { class: 'board-join' }, input, join), note);
+  };
+
+  if (hooks.name) void showBoard();
+  else showJoin();
+  return section;
+}
+
 export function summaryCard(
   results: readonly RoundResult[],
   total: number,
   onShare: () => Promise<boolean>,
+  leaderboard: LeaderboardHooks | null = null,
 ): HTMLElement {
   const rows = el(
     'div',
@@ -148,6 +249,7 @@ export function summaryCard(
       el('span', { text: ` / ${MAX_SCORE}` }),
     ),
     el('div', { class: 'card-actions' }, share),
+    leaderboard ? leaderboardSection(leaderboard) : null,
     el('p', { class: 'card-sub', text: 'A new set of five mountains at midnight.' }),
   );
 }

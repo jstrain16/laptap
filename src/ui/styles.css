@@ -357,6 +357,90 @@ body {
   color: var(--ink-dim);
 }
 
+/* --- leaderboard -------------------------------------------------------- */
+
+.board-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(127, 231, 255, 0.25);
+}
+
+.board {
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  font-size: 13px;
+}
+
+.board-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 4px;
+  border-radius: var(--radius);
+}
+
+.board-row.me {
+  background: rgba(127, 231, 255, 0.12);
+  font-weight: 700;
+}
+
+.board-rank {
+  flex: none;
+  width: 2em;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-score {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-join {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.board-join .btn {
+  flex: 0 0 auto;
+  max-width: none;
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.board-input {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--ink);
+  background: rgba(6, 12, 20, 0.8);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.board-input:focus {
+  outline: none;
+  box-shadow: 0 0 10px var(--glow);
+}
+
+/* A summary with a board can outgrow a phone; scroll the card, not the page. */
+.card {
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+}
+
 /* --- map pins ----------------------------------------------------------- */
 
 .pin {

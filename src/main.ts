@@ -6,7 +6,15 @@ import { poolFromQuery } from './game/pools.js';
 import { copy, shareText } from './game/share.js';
 import { createGame } from './game/state.js';
 import { load, save, streak } from './game/storage.js';
-import { buildEvent, track } from './game/track.js';
+import {
+  buildEvent,
+  claimName,
+  enabled as trackingEnabled,
+  fetchLeaderboard,
+  playerId,
+  savedName,
+  track,
+} from './game/track.js';
 import { basemapLabel, createMap, BASEMAP_ORDER, type GameMap } from './map/map.js';
 import { MarkerLayer } from './map/markers.js';
 import { confirmCard, promptCard, resultCard, summaryCard } from './ui/cards.js';
@@ -125,12 +133,25 @@ async function main(): Promise<void> {
     // Pull back to show every mountain from the run at once.
     map.frame(game.state.results.flatMap((r) => [r.guess, r.resort as LatLng]));
     persist();
-    if (!restoring) {
-      track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
-    }
+    // Wait for the finish to land before the board is fetched, so the player's
+    // own score is on it the first time they look. A reload re-enters here
+    // through restore(), where the finish was already counted.
+    const finished = restoring
+      ? Promise.resolve()
+      : track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
     const played = streak(pool.id, puzzle.number);
-    const card = summaryCard(game.state.results, game.state.total, () =>
-      copy(shareText(date, pool, game.state.results, game.state.total)),
+    const card = summaryCard(
+      game.state.results,
+      game.state.total,
+      () => copy(shareText(date, pool, game.state.results, game.state.total)),
+      trackingEnabled()
+        ? {
+            player: playerId(),
+            name: savedName(),
+            load: () => finished.then(() => fetchLeaderboard(pool, date)),
+            claim: claimName,
+          }
+        : null,
     );
     if (played > 1) {
       const note = card.querySelector('.card-sub');
