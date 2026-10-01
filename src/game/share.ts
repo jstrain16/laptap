@@ -1,5 +1,5 @@
 import { shortPuzzleDate } from './daily.js';
-import { DEFAULT_POOL, type Pool } from './pools.js';
+import { defaultPoolFor, type Pool } from './pools.js';
 import type { RoundResult } from './scoring.js';
 
 /**
@@ -34,8 +34,9 @@ export function shareText(
   total: number,
 ): string {
   const blocks = results.map((r) => `${r.baseScore}${bandFor(r.baseScore)}`).join(' ');
-  // A non-default pool goes into the link, so friends land on the same set.
-  const link = pool.id === DEFAULT_POOL ? SITE : `${SITE}/?pool=${pool.id}`;
+  // The link carries the pool only when the player overrode the day's
+  // default, so friends following it land on the same set.
+  const link = pool.id === defaultPoolFor(date).id ? SITE : `${SITE}/?pool=${pool.id}`;
   return [
     `LapTap (${pool.shareName} Mode) ${shortPuzzleDate(date)}`,
     blocks,

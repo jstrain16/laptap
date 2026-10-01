@@ -1,7 +1,8 @@
+import { puzzleNumberFor } from './daily.js';
 import type { BoundaryCollection } from './geo.js';
 import type { Resort } from './resorts.js';
 
-export type PoolId = 'ikon' | 'usa';
+export type PoolId = 'ikon' | 'epic' | 'usa';
 
 /**
  * One geographic rung of a pool's scoring. `key` names which resort/boundary
@@ -69,6 +70,26 @@ export const POOLS: Record<PoolId, Pool> = {
       return { resorts, boundaries };
     },
   },
+  epic: {
+    id: 'epic',
+    label: 'Epic Pass',
+    shareName: 'Epic',
+    noun: 'Epic Pass destination',
+    rungs: [
+      { key: 'region', label: 'state', points: 20, nearKm: 160 },
+      { key: 'fine', label: 'country', points: 20, nearKm: 160 },
+      { key: 'coarse', label: 'continent', points: 35, nearKm: 480 },
+    ],
+    home: { kind: 'globe' },
+    wideLabel: 'GLOBE',
+    async load() {
+      const [resorts, boundaries] = await Promise.all([
+        import('../data/resorts-epic.json').then((m) => m.default as Resort[]),
+        import('../data/countries.json').then((m) => m.default as unknown as BoundaryCollection),
+      ]);
+      return { resorts, boundaries };
+    },
+  },
   usa: {
     id: 'usa',
     label: 'All USA',
@@ -96,10 +117,16 @@ export const POOLS: Record<PoolId, Pool> = {
   },
 };
 
-export const DEFAULT_POOL: PoolId = 'ikon';
+/**
+ * The two pass pools alternate day by day — odd puzzle numbers are Ikon (the
+ * first puzzle was), even ones Epic — so a daily player sees both without
+ * choosing. `?pool=` still forces any pool.
+ */
+export function defaultPoolFor(date: Date): Pool {
+  return puzzleNumberFor(date) % 2 === 1 ? POOLS.ikon : POOLS.epic;
+}
 
-/** `?pool=usa` swaps the question set; anything else falls back to the default. */
-export function poolFromQuery(search: string): Pool {
+export function poolFromQuery(search: string, date: Date): Pool {
   const raw = new URLSearchParams(search).get('pool');
-  return POOLS[raw as PoolId] ?? POOLS[DEFAULT_POOL];
+  return POOLS[raw as PoolId] ?? defaultPoolFor(date);
 }

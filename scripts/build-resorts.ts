@@ -27,11 +27,21 @@ import {
 } from '../src/game/geo.ts';
 import { regionForState } from '../src/game/regions.ts';
 import type { Resort } from '../src/game/resorts.ts';
-import { IKON_DESTINATIONS } from './ikon-destinations.ts';
+import { EPIC_DESTINATIONS } from './epic-destinations.ts';
+import { IKON_DESTINATIONS, type IkonDestination } from './ikon-destinations.ts';
 
 const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = 'https://tiles.openskimap.org/geojson/ski_areas.geojson';
+const LIFTS_SOURCE = 'https://tiles.openskimap.org/geojson/lifts.geojson';
+
+/**
+ * A pin is the ski area's summit — the top station of its highest lift —
+ * rather than wherever OpenSkiMap happens to put the area itself, which is
+ * often the base village. The summit must still be on the same mountain:
+ * further than this from the area's own geometry means a mis-linked lift.
+ */
+const PEAK_MAX_KM = 12;
 const COUNTRIES_SOURCE =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson';
 
@@ -201,6 +211,46 @@ async function cached(url: string, file: string, label: string): Promise<string>
   return readFileSync(path, 'utf8');
 }
 
+// --- peaks --------------------------------------------------------------------
+
+interface LiftFeature {
+  geometry: { type: string; coordinates: number[][] };
+  properties: { status?: string | null; skiAreas?: { properties?: { id?: string } }[] };
+}
+
+export interface Peak {
+  lat: number;
+  lng: number;
+  ele: number;
+}
+
+/**
+ * The highest point reachable by lift in each ski area, from OpenSkiMap's
+ * lifts dump: every lift is a 3D line, so its top station is simply its
+ * highest coordinate, and the area's peak is the highest of those.
+ */
+async function loadPeaks(): Promise<Map<string, Peak>> {
+  const raw = JSON.parse(await cached(LIFTS_SOURCE, 'lifts.geojson', 'OpenSkiMap lifts')) as {
+    features: LiftFeature[];
+  };
+  const peaks = new Map<string, Peak>();
+  for (const lift of raw.features) {
+    if (lift.geometry.type !== 'LineString' || lift.properties.status === 'abandoned') continue;
+    let top: number[] | null = null;
+    for (const c of lift.geometry.coordinates) {
+      if (c.length >= 3 && (top === null || c[2]! > top[2]!)) top = c;
+    }
+    if (!top) continue;
+    for (const area of lift.properties.skiAreas ?? []) {
+      const id = area.properties?.id;
+      if (!id) continue;
+      const cur = peaks.get(id);
+      if (!cur || top[2]! > cur.ele) peaks.set(id, { lng: top[0]!, lat: top[1]!, ele: top[2]! });
+    }
+  }
+  return peaks;
+}
+
 // --- boundaries -------------------------------------------------------------
 
 function roundCoords(fc: BoundaryCollection): BoundaryCollection {
@@ -296,23 +346,46 @@ type Candidate = Omit<Resort, 'tier' | 'fine' | 'coarse' | 'region'> & {
   /** OpenSkiMap's own country and admin region — the authority for the floors. */
   country: string;
   region: string;
+  /** Whether the pin is the lift-served summit rather than the area geometry. */
+  atPeak: boolean;
 };
 
-function toCandidate(f: SkiAreaFeature): Candidate | null {
+function toCandidate(
+  f: SkiAreaFeature,
+  peaks: Map<string, Peak>,
+  world: BoundaryCollection,
+): Candidate | null {
   const coords = centroid(f.geometry);
   const name = f.properties.name?.trim();
   if (!coords || !name) return null;
   const place = f.properties.places?.[0];
+  const country = countryName(place?.localized?.en?.country ?? '');
+
+  // Prefer the summit, with two guards. A peak more than PEAK_MAX_KM from the
+  // area's own geometry is a lift mis-linked to the wrong area. And a peak the
+  // boundary file puts in a different country from the area is a border
+  // resort whose top lift ends on the frontier — Grandvalira's highest station
+  // sits on the Andorra–France ridge — so keep the base rather than relabel
+  // the whole destination.
+  const peak = peaks.get(f.properties.id);
+  const base = { lat: coords[1]!, lng: coords[0]! };
+  const usePeak =
+    !!peak &&
+    haversineKm(base, peak) <= PEAK_MAX_KM &&
+    (boundaryAt(peak, world)?.name ?? country) === country;
+  const pin = usePeak ? peak : base;
+
   return {
     id: f.properties.id,
     name: displayName(name),
     place: placeLabel(place),
-    lat: round(coords[1], 5),
-    lng: round(coords[0], 5),
+    lat: round(pin.lat, 5),
+    lng: round(pin.lng, 5),
+    atPeak: usePeak,
     lifts: liftCount(f.properties.statistics),
     verticalM: verticalM(f.properties.statistics),
     fame: fameScore(f),
-    country: countryName(place?.localized?.en?.country ?? ''),
+    country,
     region: place?.localized?.en?.region ?? '',
   };
 }
@@ -331,7 +404,7 @@ function assignTiers(
 ): Resort[] {
   return ordered.map((c, i) => {
     const frac = (i + 1) / ordered.length;
-    const { fame: _fame, country: _country, region: _region, ...rest } = c;
+    const { fame: _fame, country: _country, region: _region, atPeak: _atPeak, ...rest } = c;
     const sub = region(c);
     return {
       ...rest,
@@ -431,84 +504,99 @@ async function main() {
   console.log(`source: ${src.features.length} ski areas worldwide\n`);
 
   const byId = new Map(src.features.map((f) => [f.properties.id, f] as const));
+  const peaks = await loadPeaks();
+  console.log(`peaks: lift-served summits for ${peaks.size} ski areas\n`);
 
-  // --- Ikon pool ----------------------------------------------------------
+  // --- pass pools ----------------------------------------------------------
 
-  const ikonCandidates: Candidate[] = [];
-  const seen = new Set<string>();
-  for (const dest of IKON_DESTINATIONS) {
-    const matches = [...byId.values()].filter((f) => f.properties.id.startsWith(dest.osm));
-    if (matches.length !== 1) {
-      fail(
-        `Ikon: "${dest.name}" prefix ${dest.osm} matched ${matches.length} ski areas` +
-          (matches.length ? ` (${matches.map((m) => m.properties.name).join(', ')})` : ''),
-      );
+  /**
+   * Resolve a curated, ranked destination list against OpenSkiMap. The list's
+   * order is the difficulty ranking and nothing here reorders it.
+   */
+  function buildPassPool(
+    label: string,
+    list: readonly IkonDestination[],
+    sizes: readonly number[],
+  ): Resort[] {
+    const cands: Candidate[] = [];
+    const seen = new Set<string>();
+    for (const dest of list) {
+      const matches = [...byId.values()].filter((f) => f.properties.id.startsWith(dest.osm));
+      if (matches.length !== 1) {
+        fail(
+          `${label}: "${dest.name}" prefix ${dest.osm} matched ${matches.length} ski areas` +
+            (matches.length ? ` (${matches.map((m) => m.properties.name).join(', ')})` : ''),
+        );
+      }
+      const f = matches[0]!;
+      // Two destinations may share an OpenSkiMap area only when at least one of
+      // them pins its own coordinates; otherwise they would be the same question.
+      if (seen.has(f.properties.id) && !dest.at) {
+        fail(`${label}: "${dest.name}" reuses another destination's area without an \`at\` override`);
+      }
+      seen.add(f.properties.id);
+
+      const c = toCandidate(f, peaks, countries);
+      if (!c) fail(`${label}: "${dest.name}" has no usable geometry`);
+
+      if (dest.at) {
+        // A pinned destination takes its country from where the pin lands, not
+        // from the shared area it borrowed its id from — Cervinia's area is
+        // registered in Switzerland. The pin is hand-placed, so the polygon
+        // lookup is the ground truth here rather than something to check.
+        const hit = boundaryAt({ lat: dest.at[0], lng: dest.at[1] }, countries);
+        if (!hit) fail(`${label}: "${dest.name}" is pinned at sea (${dest.at})`);
+        cands.push({
+          ...c,
+          // The id is a resort's identity everywhere downstream — distinct
+          // questions, the no-repeat cycle, saved games — so a pin that borrows
+          // another destination's area cannot borrow its id as well.
+          id: `${c.id}#${dest.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          name: dest.name,
+          lat: dest.at[0],
+          lng: dest.at[1],
+          atPeak: true,
+          country: hit.name,
+          place: hit.name,
+        });
+        peakCount.n++;
+        continue;
+      }
+
+      const place = f.properties.places?.[0];
+      if (place?.iso3166_1Alpha2 !== dest.cc) {
+        fail(
+          `${label}: "${dest.name}" resolved to ${f.properties.name} in ` +
+            `${place?.iso3166_1Alpha2 ?? 'nowhere'}, expected ${dest.cc}`,
+        );
+      }
+      // The list's own name wins over OpenSkiMap's — the player is being asked
+      // to find "Jackson Hole", not an OSM object.
+      if (c.atPeak) peakCount.n++;
+      cands.push({ ...c, name: dest.name });
     }
-    const f = matches[0]!;
-    // Two destinations may share an OpenSkiMap area only when at least one of
-    // them pins its own coordinates; otherwise they would be the same question.
-    if (seen.has(f.properties.id) && !dest.at) {
-      fail(`Ikon: "${dest.name}" reuses another destination's area without an \`at\` override`);
-    }
-    seen.add(f.properties.id);
 
-    const c = toCandidate(f);
-    if (!c) fail(`Ikon: "${dest.name}" has no usable geometry`);
-
-    if (dest.at) {
-      // A pinned destination takes its country from where the pin lands, not
-      // from the shared area it borrowed its id from — Cervinia's area is
-      // registered in Switzerland. The pin is hand-placed, so the polygon
-      // lookup is the ground truth here rather than something to check.
-      const hit = boundaryAt({ lat: dest.at[0], lng: dest.at[1] }, countries);
-      if (!hit) fail(`Ikon: "${dest.name}" is pinned at sea (${dest.at})`);
-      ikonCandidates.push({
-        ...c,
-        // The id is a resort's identity everywhere downstream — distinct
-        // questions, the no-repeat cycle, saved games — so a pin that borrows
-        // another destination's area cannot borrow its id as well.
-        id: `${c.id}#${dest.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-        name: dest.name,
-        lat: dest.at[0],
-        lng: dest.at[1],
-        country: hit.name,
-        place: hit.name,
-      });
-      continue;
-    }
-
-    const place = f.properties.places?.[0];
-    if (place?.iso3166_1Alpha2 !== dest.cc) {
-      fail(
-        `Ikon: "${dest.name}" resolved to ${f.properties.name} in ` +
-          `${place?.iso3166_1Alpha2 ?? 'nowhere'}, expected ${dest.cc}`,
-      );
-    }
-    // The list's own name wins over OpenSkiMap's — the player is being asked
-    // to find "Jackson Hole", not an OSM object.
-    ikonCandidates.push({ ...c, name: dest.name });
+    // Tier sizes are chosen so no two tiers realign within MIN_PAIR_DAYS; see
+    // cutsFor. Each tier is a fixed cycle indexed by day, so two tiers of the
+    // same size would bring the same pairs of mountains round together forever.
+    return assignTiers(
+      cands,
+      cutsFor(cands.length, sizes),
+      (c) => c.country,
+      (c) => boundaryAt(c, countries)?.group ?? '',
+      // The state rung only exists where the world file has state polygons, so
+      // read it from the polygon rather than from OpenSkiMap's region string —
+      // the two must agree for the floor to ever fire.
+      (c) => boundaryAt(c, countries)?.region,
+    );
   }
 
-  // The list is already in difficulty order — the position in
-  // ikon-destinations.ts is the ranking, and nothing here reorders it.
-  //
-  // Tier sizes are chosen so no two share a short common period. Each tier
-  // is a fixed cycle indexed by day, so two tiers of the same size advance in
-  // lockstep and the same pairs of mountains come round together forever —
-  // with even fifths, Kitzbühel landed next to Hakuba Valley every 14 days.
-  // Two tiers of sizes a and b realign every lcm(a, b) days; these sizes keep
-  // every pair apart for at least MIN_PAIR_DAYS, so each puzzle is a fresh
-  // combination even though each mountain itself returns every 11-18 days.
-  const ikon = assignTiers(
-    ikonCandidates,
-    cutsFor(ikonCandidates.length, [11, 13, 15, 16, 18]),
-    (c) => c.country,
-    (c) => boundaryAt(c, countries)?.group ?? '',
-    // The state rung only exists where the world file has state polygons, so
-    // read it from the polygon rather than from OpenSkiMap's region string —
-    // the two must agree for the floor to ever fire.
-    (c) => boundaryAt(c, countries)?.region,
-  );
+  const peakCount = { n: 0 };
+  const ikon = buildPassPool('Ikon', IKON_DESTINATIONS, [11, 13, 15, 16, 18]);
+  const ikonPeaks = peakCount.n;
+  peakCount.n = 0;
+  const epic = buildPassPool('Epic', EPIC_DESTINATIONS, [9, 10, 13, 14, 16]);
+  const epicPeaks = peakCount.n;
 
   // --- USA pool -----------------------------------------------------------
 
@@ -526,10 +614,11 @@ async function main() {
 
   const usaCandidates: Candidate[] = [];
   const duplicates: string[] = [];
+  let usaPeaks = 0;
   for (const f of usaPool.sort(
     (a, b) => fameScore(b) - fameScore(a) || a.properties.id.localeCompare(b.properties.id),
   )) {
-    const c = toCandidate(f);
+    const c = toCandidate(f, peaks, countries);
     if (!c || !c.region || !regionForState(c.region)) continue;
     // A few areas appear as two OSM objects a couple hundred metres apart.
     // They share a name and their statistics, so keep whichever ranked higher.
@@ -537,6 +626,7 @@ async function main() {
       duplicates.push(c.name);
       continue;
     }
+    if (c.atPeak) usaPeaks++;
     usaCandidates.push(c);
   }
   // Two genuinely different mountains do share a name (Crystal Mountain in both
@@ -560,43 +650,52 @@ async function main() {
   if (ikon.length !== IKON_DESTINATIONS.length) {
     fail(`Ikon: built ${ikon.length} of ${IKON_DESTINATIONS.length} destinations`);
   }
+  if (epic.length !== EPIC_DESTINATIONS.length) {
+    fail(`Epic: built ${epic.length} of ${EPIC_DESTINATIONS.length} destinations`);
+  }
   if (usa.length < 450 || usa.length > 550) {
     fail(`USA: expected 450-550 resorts, got ${usa.length} — has the source schema changed?`);
   }
   // The Ikon list is 80 hand-checked entries, so every one must land in the
   // country it claims; the 497-strong US set tolerates a few border cases.
   checkPool('ikon', ikon, countries, 1);
+  checkPool('epic', epic, countries, 1);
   checkPool('usa', usa, states, 0.95);
 
-  const SPOT_CHECKS: [string, number, number][] = [
-    ['Alta', 40.5806, -111.6249],
-    ['Jackson Hole', 43.6032, -110.85],
-    ['Niseko United', 42.863, 140.6773],
-    ['Valle Nevado', -33.3383, -70.25],
-    ['Zermatt', 46.0207, 7.7491],
-    ['Cervinia', 45.9344, 7.6305],
+  // Pins are summits now. Each must sit near the mountain's known top: the
+  // pairs here are the real summit coordinates, and a pin drifting more than
+  // ~3km from one means the lift linkage changed underneath us.
+  const SPOT_CHECKS: [Resort[], string, number, number][] = [
+    [ikon, 'Alta', 40.5665, -111.6285], // Mount Baldy / Sugarloaf ridge
+    [ikon, 'Jackson Hole', 43.5929, -110.8737], // Rendezvous Mountain
+    [ikon, 'Zermatt', 45.9836, 7.7853], // Gornergrat
+    [ikon, 'Cervinia', 45.9345, 7.7076], // Testa Grigia / Plateau Rosa
+    [epic, 'Vail', 39.573, -106.3079], // Blue Sky Basin, top of Pete's Express
+    [epic, 'Whistler Blackcomb', 50.0947, -122.8767], // Blackcomb Glacier, top of the Showcase T-bar
   ];
-  for (const [name, lat, lng] of SPOT_CHECKS) {
-    const r = ikon.find((x) => x.name === name);
-    if (!r) fail(`spot check "${name}" is missing from the Ikon pool`);
-    if (Math.max(Math.abs(r.lat - lat), Math.abs(r.lng - lng)) > 0.05) {
-      fail(`spot check "${name}" moved to ${r.lat},${r.lng} (expected ~${lat},${lng})`);
-    }
+  for (const [pool, name, lat, lng] of SPOT_CHECKS) {
+    const r = pool.find((x) => x.name === name);
+    if (!r) fail(`spot check "${name}" is missing`);
+    const km = haversineKm(r, { lat, lng });
+    if (km > 3) fail(`spot check "${name}" sits ${km.toFixed(1)}km from its summit (${r.lat},${r.lng})`);
   }
 
   const write = (file: string, data: unknown) =>
     writeFileSync(resolve(ROOT, 'src/data', file), JSON.stringify(data) + '\n');
   write('resorts-ikon.json', ikon);
+  write('resorts-epic.json', epic);
   write('resorts-usa.json', usa);
   write('countries.json', countries);
   write('states.json', states);
 
   const size = (p: string) => `${(statSync(resolve(ROOT, 'src/data', p)).size / 1024).toFixed(0)}KB`;
   console.log(`
-  files          resorts-ikon ${size('resorts-ikon.json')}  resorts-usa ${size('resorts-usa.json')}  countries ${size('countries.json')}  states ${size('states.json')}
+  files          ikon ${size('resorts-ikon.json')}  epic ${size('resorts-epic.json')}  usa ${size('resorts-usa.json')}  countries ${size('countries.json')}  states ${size('states.json')}
+  summits        ikon ${ikonPeaks}/${ikon.length}  epic ${epicPeaks}/${epic.length}  usa ${usaPeaks}/${usa.length}
   ikon spread    ${new Set(ikon.map((r) => r.fine)).size} countries, ${new Set(ikon.map((r) => r.coarse)).size} continents, ${ikon.filter((r) => r.region).length} with a state rung
-  ikon tier 1    ${ikon.filter((r) => r.tier === 1).slice(0, 5).map((r) => r.name).join(', ')}
-  ikon tier 5    ${ikon.filter((r) => r.tier === 5).slice(-5).map((r) => r.name).join(', ')}
+  epic spread    ${new Set(epic.map((r) => r.fine)).size} countries, ${new Set(epic.map((r) => r.coarse)).size} continents, ${epic.filter((r) => r.region).length} with a state rung
+  epic tier 1    ${epic.filter((r) => r.tier === 1).slice(0, 5).map((r) => r.name).join(', ')}
+  epic tier 5    ${epic.filter((r) => r.tier === 5).slice(-5).map((r) => r.name).join(', ')}
 `);
 }
 

@@ -16,6 +16,9 @@ function dayNumber(date: Date): number {
   return Math.floor((local - EPOCH) / DAY_MS);
 }
 
+/** The puzzle number for a calendar day — #1 on the epoch day. Shared by every pool. */
+export const puzzleNumberFor = (date: Date) => dayNumber(date) + 1;
+
 export interface Puzzle {
   number: number;
   /** Local calendar date the puzzle belongs to. */

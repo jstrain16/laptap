@@ -12,9 +12,10 @@
  * Tremblant to a cross-country centre and three Japanese resorts to the same
  * wrong hill.
  *
- * `at` overrides the pin for the few places OpenSkiMap maps as one linked area
- * but the list treats as two: Zermatt and Cervinia share a lift system across
- * the Swiss–Italian border, and the shared area's centroid sits in Italy.
+ * Pins are summits — the top station of each area's highest lift — not the
+ * village below. `at` overrides that for the few places OpenSkiMap maps as one
+ * linked area but the list treats as two: Zermatt and Cervinia share a lift
+ * system whose highest top, the Klein Matterhorn, sits right on the border.
  */
 export interface IkonDestination {
   /** The name as the player sees it. */
@@ -31,7 +32,9 @@ export const IKON_DESTINATIONS: IkonDestination[] = [
   // --- Household names, even to non-skiers --------------------------------
   { name: 'Aspen Snowmass', osm: 'ab35349b', cc: 'US' },
   { name: 'Jackson Hole', osm: '2b812055', cc: 'US' },
-  { name: 'Zermatt', osm: '10811e37', cc: 'CH', at: [46.0207, 7.7491] },
+  // Gornergrat — Zermatt's own summit, on the Swiss side of a lift system it
+  // shares with Cervinia across the border.
+  { name: 'Zermatt', osm: '10811e37', cc: 'CH', at: [45.9836, 7.7853] },
   { name: 'Chamonix', osm: 'c2fba992', cc: 'FR' },
   { name: 'St. Moritz', osm: 'f9beaf4e', cc: 'CH' },
   { name: 'Deer Valley', osm: 'b7a20021', cc: 'US' },
@@ -69,7 +72,8 @@ export const IKON_DESTINATIONS: IkonDestination[] = [
   { name: 'Mt. Bachelor', osm: 'df0ebcea', cc: 'US' },
   { name: 'Big Bear Mountain Resort', osm: '78bac123', cc: 'US' },
   { name: 'Courmayeur', osm: 'f93e7406', cc: 'IT' },
-  { name: 'Cervinia', osm: '10811e37', cc: 'IT', at: [45.9344, 7.6305] },
+  // Testa Grigia / Plateau Rosa, the Italian top of the same system.
+  { name: 'Cervinia', osm: '10811e37', cc: 'IT', at: [45.9345, 7.7076] },
   // Ten linked areas; anchored on Happo-One, the flagship.
   { name: 'Hakuba Valley', osm: '2badaaea', cc: 'JP' },
   { name: 'Thredbo', osm: 'd02b7dc1', cc: 'AU' },

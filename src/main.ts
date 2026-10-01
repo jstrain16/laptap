@@ -29,8 +29,8 @@ function render(node: HTMLElement | null): void {
 const pad3 = (n: number) => String(Math.min(n, 999)).padStart(3, '0');
 
 async function main(): Promise<void> {
-  const pool = poolFromQuery(window.location.search);
   const date = dateFromQuery(window.location.search);
+  const pool = poolFromQuery(window.location.search, date);
 
   const { resorts, boundaries } = await pool.load();
   const puzzle = puzzleFor(date, pool.id, resorts);

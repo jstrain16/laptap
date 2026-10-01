@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dateFromQuery, puzzleFor } from './daily.ts';
-import { COUNTRIES, IKON, STATES, USA } from './fixtures.test-util.ts';
+import { dateFromQuery, puzzleFor, puzzleNumberFor } from './daily.ts';
+import { COUNTRIES, EPIC, IKON, STATES, USA } from './fixtures.test-util.ts';
 import { boundaryAt } from './geo.ts';
-import { POOLS, poolFromQuery, type PoolId } from './pools.ts';
+import { POOLS, defaultPoolFor, poolFromQuery, type PoolId } from './pools.ts';
 import { TIER_COUNT, type Resort } from './resorts.ts';
 import { seededShuffle } from './rng.ts';
 
 const POOL_DATA: [PoolId, Resort[], number][] = [
   ['ikon', IKON, 70],
+  ['epic', EPIC, 60],
   ['usa', USA, 450],
 ];
 
@@ -71,20 +72,25 @@ for (const [id, resorts, minSize] of POOL_DATA) {
   });
 }
 
-test('ikon: no pair of mountains shares a puzzle twice within 60 days', () => {
-  // Tier sizes are pairwise coprime for exactly this reason: a player who
-  // plays every day should never feel a puzzle echo an earlier one.
+for (const [id, resorts] of [
+  ['ikon', IKON],
+  ['epic', EPIC],
+] as const) {
+test(`${id}: no pair of mountains shares a puzzle twice within 60 days`, () => {
+  // Tier sizes are chosen for exactly this reason: a player who plays every
+  // day should never feel a puzzle echo an earlier one.
   const seen = new Map<string, number>();
   for (let d = 0; d < 60; d++) {
-    const { number, resorts } = puzzleFor(new Date(2026, 9, 1 + d), 'ikon', IKON);
-    for (let i = 0; i < resorts.length; i++) {
-      for (let j = i + 1; j < resorts.length; j++) {
-        const key = [resorts[i]!.id, resorts[j]!.id].sort().join('|');
+    const { number, resorts: picked } = puzzleFor(new Date(2026, 9, 1 + d), id, resorts);
+    const resorts_ = picked;
+    for (let i = 0; i < resorts_.length; i++) {
+      for (let j = i + 1; j < resorts_.length; j++) {
+        const key = [resorts_[i]!.id, resorts_[j]!.id].sort().join('|');
         const first = seen.get(key);
         assert.equal(
           first,
           undefined,
-          `${resorts[i]!.name} + ${resorts[j]!.name} appeared together on #${first} and #${number}`,
+          `${resorts_[i]!.name} + ${resorts_[j]!.name} appeared together on #${first} and #${number}`,
         );
         seen.set(key, number);
       }
@@ -92,9 +98,9 @@ test('ikon: no pair of mountains shares a puzzle twice within 60 days', () => {
   }
 });
 
-test('ikon: no two tiers realign within 60 days', () => {
+test(`${id}: no two tiers realign within 60 days`, () => {
   const sizes = Array.from({ length: TIER_COUNT }, (_, i) =>
-    IKON.filter((r) => r.tier === i + 1).length,
+    resorts.filter((r) => r.tier === i + 1).length,
   );
   const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
   for (let i = 0; i < sizes.length; i++) {
@@ -103,6 +109,33 @@ test('ikon: no two tiers realign within 60 days', () => {
       assert.ok(period >= 60, `tiers ${i + 1} and ${j + 1} (${sizes[i]}, ${sizes[j]}) realign every ${period} days`);
     }
   }
+});
+}
+
+test('the pass pools alternate by day: odd puzzles Ikon, even puzzles Epic', () => {
+  const oct1 = new Date(2026, 9, 1);
+  const oct2 = new Date(2026, 9, 2);
+  assert.equal(puzzleNumberFor(oct1), 1);
+  assert.equal(defaultPoolFor(oct1).id, 'ikon');
+  assert.equal(defaultPoolFor(oct2).id, 'epic');
+  assert.equal(defaultPoolFor(new Date(2026, 9, 31)).id, 'ikon');
+  // An explicit ?pool= always wins over the day's default.
+  assert.equal(poolFromQuery('?pool=epic', oct1).id, 'epic');
+  assert.equal(poolFromQuery('?pool=ikon', oct2).id, 'ikon');
+  assert.equal(poolFromQuery('', oct2).id, 'epic');
+});
+
+test('every pin is a lift-served summit, not a town', () => {
+  // The two curated pools pin known summits; a few sanity anchors here.
+  const near = (pool: Resort[], name: string, lat: number, lng: number) => {
+    const r = pool.find((x) => x.name === name)!;
+    assert.ok(r, `${name} missing`);
+    const dLat = Math.abs(r.lat - lat);
+    const dLng = Math.abs(r.lng - lng);
+    assert.ok(dLat < 0.03 && dLng < 0.04, `${name} pinned at ${r.lat},${r.lng}, expected near ${lat},${lng}`);
+  };
+  near(EPIC, 'Vail', 39.573, -106.308); // Blue Sky Basin, not Vail Village (39.64)
+  near(IKON, 'Zermatt', 45.9836, 7.7853); // Gornergrat, not the village (46.02)
 });
 
 test('the two pools ask different questions on the same day', () => {
@@ -166,13 +199,18 @@ test('?date overrides today, and junk falls back to today', () => {
   assert.equal(dateFromQuery('').toDateString(), today);
 });
 
-test('?pool selects the question set and defaults to Ikon', () => {
-  assert.equal(poolFromQuery('?pool=usa').id, 'usa');
-  assert.equal(poolFromQuery('?pool=ikon').id, 'ikon');
-  assert.equal(poolFromQuery('?pool=nonsense').id, 'ikon');
-  assert.equal(poolFromQuery('').id, 'ikon');
+test('?pool selects the question set, and junk falls back to the day default', () => {
+  const oct1 = new Date(2026, 9, 1);
+  assert.equal(poolFromQuery('?pool=usa', oct1).id, 'usa');
+  assert.equal(poolFromQuery('?pool=epic', oct1).id, 'epic');
+  assert.equal(poolFromQuery('?pool=nonsense', oct1).id, 'ikon');
+  assert.equal(poolFromQuery('', oct1).id, 'ikon');
   assert.deepEqual(
     POOLS.ikon.rungs.map((f) => f.label),
+    ['state', 'country', 'continent'],
+  );
+  assert.deepEqual(
+    POOLS.epic.rungs.map((f) => f.label),
     ['state', 'country', 'continent'],
   );
   assert.deepEqual(

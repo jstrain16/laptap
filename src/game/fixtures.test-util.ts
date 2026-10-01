@@ -12,6 +12,7 @@ const read = <T>(file: string): T =>
  * but the node test runner does not.
  */
 export const IKON = read<Resort[]>('resorts-ikon.json');
+export const EPIC = read<Resort[]>('resorts-epic.json');
 export const USA = read<Resort[]>('resorts-usa.json');
 export const COUNTRIES = read<BoundaryCollection>('countries.json');
 export const STATES = read<BoundaryCollection>('states.json');

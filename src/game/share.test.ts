@@ -27,6 +27,14 @@ test('a non-default pool is carried in the link', () => {
   assert.ok(text.endsWith(`${SITE}/?pool=usa`));
 });
 
+test("the link is bare on the pool's own day and carries ?pool= on the other", () => {
+  // Oct 1 is #1 (Ikon's day), Oct 2 is #2 (Epic's).
+  assert.ok(shareText(new Date(2026, 9, 1), POOLS.ikon, sample, 0).endsWith(`\n${SITE}`));
+  assert.ok(shareText(new Date(2026, 9, 2), POOLS.epic, sample, 0).endsWith(`\n${SITE}`));
+  assert.ok(shareText(new Date(2026, 9, 2), POOLS.ikon, sample, 0).endsWith(`${SITE}/?pool=ikon`));
+  assert.ok(shareText(new Date(2026, 9, 1), POOLS.epic, sample, 0).startsWith('LapTap (Epic Mode) '));
+});
+
 test('every score band has an emoji, and the bands are ordered', () => {
   const seen = new Set<string>();
   let prev = '';
