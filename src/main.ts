@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     persist();
     const played = streak(pool.id, puzzle.number);
     const card = summaryCard(game.state.results, game.state.total, () =>
-      copy(shareText(date, pool.label, game.state.results, game.state.total)),
+      copy(shareText(date, pool, game.state.results, game.state.total)),
     );
     if (played > 1) {
       const note = card.querySelector('.card-sub');
