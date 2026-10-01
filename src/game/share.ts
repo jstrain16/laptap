@@ -1,16 +1,21 @@
 import { shortPuzzleDate } from './daily.js';
 import type { RoundResult } from './scoring.js';
 
-/** Wordle-shaped bands, so a result block reads at a glance. */
+/**
+ * One emoji per score band, so a result block reads at a glance — a ski day
+ * going progressively worse. Wordle's coloured squares were the first draft;
+ * the black one for a miss was invisible on the dark result card.
+ */
 const BANDS: [number, string][] = [
-  [90, '🟩'],
-  [70, '🟨'],
-  [45, '🟧'],
-  [20, '🟥'],
+  [90, '🎯'], // bullseye
+  [70, '⛷️'], // skied it
+  [45, '🎿'], // had skis on, at least
+  [20, '❄️'], // cold
 ];
+const MISS = '💀';
 
 export const bandFor = (baseScore: number) =>
-  BANDS.find(([min]) => baseScore >= min)?.[1] ?? '⬛';
+  BANDS.find(([min]) => baseScore >= min)?.[1] ?? MISS;
 
 export function shareText(
   date: Date,
