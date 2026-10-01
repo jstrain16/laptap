@@ -10,6 +10,7 @@ import {
   buildEvent,
   claimName,
   enabled as trackingEnabled,
+  fetchAllTime,
   fetchLeaderboard,
   playerId,
   savedName,
@@ -136,9 +137,9 @@ async function main(): Promise<void> {
     // Wait for the finish to land before the board is fetched, so the player's
     // own score is on it the first time they look. A reload re-enters here
     // through restore(), where the finish was already counted.
-    const finished = restoring
-      ? Promise.resolve()
-      : track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
+    const finish = () =>
+      track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
+    const finished = restoring ? Promise.resolve() : finish();
     const played = streak(pool.id, puzzle.number);
     const card = summaryCard(
       game.state.results,
@@ -149,7 +150,9 @@ async function main(): Promise<void> {
             player: playerId(),
             name: savedName(),
             load: () => finished.then(() => fetchLeaderboard(pool, date)),
+            loadAllTime: fetchAllTime,
             claim: claimName,
+            resend: finish,
           }
         : null,
     );

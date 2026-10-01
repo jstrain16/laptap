@@ -132,10 +132,13 @@ Read it in the Supabase dashboard via three views:
 | `overall_stats` | unique players, games finished, days with play |
 
 **Leaderboard.** After finishing, a player can claim a nickname — first come, first served, no
-email or password — and see today's board for that pool. The browser's random id is the identity,
-so a name is tied to the device it was claimed on. The `leaderboard` view (nickname and score per
-day per pool) is the one thing readable through the site; raw plays and the `players` table are
-not.
+email or password — and see today's board for that pool, plus an all-time board ranked by average score (games played
+shown alongside, ties to whoever has played more). The browser's random id is the identity,
+so a name is tied to the device it was claimed on. The `leaderboard` and `leaderboard_alltime` views
+(nicknames and scores) are the only things readable through the site; raw plays and the `players`
+table are not. If a named player is missing from today's board — a game finished before tracking
+existed, or a finish that never reached the server — the summary re-sends the finish from the
+local save and looks again.
 
 The schema is in [`supabase/migrations/`](supabase/migrations/). The client is
 [`src/game/track.ts`](src/game/track.ts); with no `VITE_SUPABASE_*` configured it's a no-op, so

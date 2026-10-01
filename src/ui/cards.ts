@@ -4,6 +4,7 @@ import {
   NAME_MAX,
   rankOf,
   validName,
+  type AllTimeRow,
   type ClaimResult,
   type LeaderboardRow,
 } from '../game/track.js';
@@ -114,20 +115,27 @@ export function resultCard(result: RoundResult, isLast: boolean, onNext: () => v
   );
 }
 
-/** What the summary needs to show today's board, or null when tracking is off. */
+/** What the summary needs to show the boards, or null when tracking is off. */
 export interface LeaderboardHooks {
   player: string;
   name: string | null;
   load: () => Promise<LeaderboardRow[]>;
+  loadAllTime: () => Promise<AllTimeRow[]>;
   claim: (name: string) => Promise<ClaimResult>;
+  /**
+   * Re-sends this game's finish. Used when the player should be on today's
+   * board but isn't — a game finished before tracking existed, or a finish
+   * that never reached the server — so a name is never left without a score.
+   */
+  resend: () => Promise<void>;
 }
 
 const TOP = 10;
 
-function boardList(rows: LeaderboardRow[], player: string): HTMLElement {
-  if (rows.length === 0) {
-    return el('p', { class: 'card-sub', text: 'Nobody else has finished yet. You could be first.' });
-  }
+type Line = { player_id: string; name: string; main: string; aside?: string };
+
+function boardList(rows: Line[], player: string, empty: string): HTMLElement {
+  if (rows.length === 0) return el('p', { class: 'card-sub', text: empty });
   const mine = rankOf(rows, player);
   const shown = rows.slice(0, TOP);
   // Always show the player's own row, even if they're outside the top ten.
@@ -141,7 +149,8 @@ function boardList(rows: LeaderboardRow[], player: string): HTMLElement {
         { class: `board-row${r.player_id === player ? ' me' : ''}` },
         el('span', { class: 'board-rank', text: `${rankOf(rows, r.player_id)}` }),
         el('span', { class: 'board-name', text: r.name }),
-        el('span', { class: 'board-score', text: String(r.total) }),
+        r.aside ? el('span', { class: 'board-aside', text: r.aside }) : null,
+        el('span', { class: 'board-score', text: r.main }),
       ),
     ),
   );
@@ -149,24 +158,81 @@ function boardList(rows: LeaderboardRow[], player: string): HTMLElement {
 
 /**
  * The join prompt becomes the board in place once a name is claimed, so the
- * card never jumps. Any failure degrades to a quiet line, never an error.
+ * card never jumps. Two tabs — today and all-time — share one list. Any
+ * failure degrades to a quiet line, never an error.
  */
 function leaderboardSection(hooks: LeaderboardHooks): HTMLElement {
   const section = el('div', { class: 'board-section' });
-  const heading = el('div', { class: 'card-kicker', text: "TODAY'S LEADERBOARD" });
   const body = el('div');
-  section.append(heading, body);
+  let tab: 'today' | 'alltime' = 'today';
+
+  const tabs = el(
+    'div',
+    { class: 'board-tabs' },
+    button('TODAY', () => switchTab('today'), 'board-tab active'),
+    button('ALL-TIME', () => switchTab('alltime'), 'board-tab'),
+  );
+  section.append(tabs, body);
+
+  function switchTab(next: typeof tab) {
+    if (next === tab) return;
+    tab = next;
+    for (const b of tabs.querySelectorAll('.board-tab')) {
+      b.classList.toggle('active', b.textContent === (tab === 'today' ? 'TODAY' : 'ALL-TIME'));
+    }
+    void showBoard();
+  }
+
+  const showToday = async () => {
+    let rows = await hooks.load();
+    // A named player with no score on today's board has a finish the server
+    // never saw. Send it and look again, once.
+    if (rankOf(rows, hooks.player) === null) {
+      await hooks.resend();
+      rows = await hooks.load();
+    }
+    const mine = rankOf(rows, hooks.player);
+    body.replaceChildren(
+      boardList(
+        rows.map((r) => ({ player_id: r.player_id, name: r.name, main: String(r.total) })),
+        hooks.player,
+        'Nobody else has finished today. You could be first.',
+      ),
+      el('p', {
+        class: 'card-sub',
+        text: mine
+          ? `You're #${mine} of ${rows.length} today as ${hooks.name}.`
+          : `Playing as ${hooks.name}.`,
+      }),
+    );
+  };
+
+  const showAllTime = async () => {
+    const rows = await hooks.loadAllTime();
+    const mine = rankOf(rows, hooks.player);
+    body.replaceChildren(
+      boardList(
+        rows.map((r) => ({
+          player_id: r.player_id,
+          name: r.name,
+          main: String(r.avg_score),
+          aside: `${r.games} game${r.games === 1 ? '' : 's'}`,
+        })),
+        hooks.player,
+        'No finished games yet.',
+      ),
+      el('p', {
+        class: 'card-sub',
+        text: mine
+          ? `#${mine} of ${rows.length} all-time by average score.`
+          : 'Ranked by average score; ties go to whoever has played more.',
+      }),
+    );
+  };
 
   const showBoard = async () => {
     body.replaceChildren(el('p', { class: 'card-sub', text: 'Loading…' }));
-    const rows = await hooks.load();
-    const mine = rankOf(rows, hooks.player);
-    body.replaceChildren(
-      boardList(rows, hooks.player),
-      mine
-        ? el('p', { class: 'card-sub', text: `You're #${mine} of ${rows.length} as ${hooks.name}.` })
-        : el('p', { class: 'card-sub', text: `Playing as ${hooks.name}.` }),
-    );
+    await (tab === 'today' ? showToday() : showAllTime());
   };
 
   const showJoin = () => {

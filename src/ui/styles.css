@@ -365,6 +365,36 @@ body {
   border-top: 1px dashed rgba(127, 231, 255, 0.25);
 }
 
+.board-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.board-tab {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.board-tab.active {
+  color: var(--ink);
+  border-color: var(--edge);
+}
+
+.board-aside {
+  flex: none;
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
 .board {
   margin: 8px 0 4px;
   padding: 0;

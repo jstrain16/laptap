@@ -205,8 +205,37 @@ export async function fetchLeaderboard(pool: Pool, date: Date): Promise<Leaderbo
   }
 }
 
+export interface AllTimeRow {
+  player_id: string;
+  name: string;
+  games: number;
+  avg_score: number;
+  best: number;
+  points: number;
+}
+
+/**
+ * Everyone who has ever named themselves, best average first. Ties go to
+ * whoever has played more, so a single lucky game doesn't outrank a regular.
+ */
+export async function fetchAllTime(): Promise<AllTimeRow[]> {
+  if (!URL || !KEY) return [];
+  try {
+    const q = new URLSearchParams({
+      select: 'player_id,name,games,avg_score,best,points',
+      order: 'avg_score.desc,games.desc,name.asc',
+      limit: '100',
+    });
+    const res = await fetch(`${URL}/rest/v1/leaderboard_alltime?${q}`, { headers: headers() });
+    if (!res.ok) return [];
+    return (await res.json()) as AllTimeRow[];
+  } catch {
+    return [];
+  }
+}
+
 /** Pure: 1-based rank of a player on a board sorted best-first, or null. */
-export function rankOf(rows: readonly LeaderboardRow[], player: string): number | null {
+export function rankOf(rows: readonly { player_id: string }[], player: string): number | null {
   const i = rows.findIndex((r) => r.player_id === player);
   return i === -1 ? null : i + 1;
 }
