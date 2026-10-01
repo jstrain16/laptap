@@ -55,14 +55,15 @@ function pointInPolygon(lng: number, lat: number, rings: Ring[]): boolean {
 }
 
 /**
- * One administrative shape. `name` is the fine-grained label (a US state, or a
- * country in the global pool) and `group` the coarse one it belongs to (a ski
- * region, or a continent). Both pools use the same shape, so the scoring floors
- * are written once.
+ * One administrative shape, tagged with up to three nested labels, finest
+ * first: `region` (a state, where the pool has state-level data), `name` (a
+ * country — or a state, in the US pool) and `group` (a continent, or a ski
+ * region). Both pools use the same shape, so the scoring floors are written
+ * once and each pool just declares which levels it has.
  */
 export interface BoundaryFeature {
   type: 'Feature';
-  properties: { name: string; group: string };
+  properties: { region?: string; name: string; group: string };
   bbox?: [number, number, number, number];
   geometry:
     | { type: 'Polygon'; coordinates: Ring[] }

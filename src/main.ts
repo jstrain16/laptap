@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   const puzzle = puzzleFor(date, pool.id, resorts);
   const map: GameMap = await createMap($('map'), pool);
 
-  const game = createGame(puzzle, boundaries);
+  const game = createGame(puzzle, boundaries, pool.floors);
   const markers = new MarkerLayer(map);
 
   title.innerHTML =
@@ -109,9 +109,7 @@ async function main(): Promise<void> {
     scoreValue.textContent = pad3(game.state.total);
     persist();
     render(
-      resultCard(result, pool, game.state.roundIndex === puzzle.resorts.length - 1, () =>
-        game.next(),
-      ),
+      resultCard(result, game.state.roundIndex === puzzle.resorts.length - 1, () => game.next()),
     );
   }
 

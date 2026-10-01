@@ -10,9 +10,11 @@ export interface Resort {
   verticalM: number;
   /** 1 = everyone knows it, 5 = you have never heard of it. */
   tier: 1 | 2 | 3 | 4 | 5;
-  /** Fine boundary: a US state, or a country in the global pool. */
+  /** Finest boundary where the pool has one: a US state in the global pool. */
+  region?: string;
+  /** Fine boundary: a country in the global pool, a state in the US pool. */
   fine: string;
-  /** Coarse boundary: a US ski region, or a continent. */
+  /** Coarse boundary: a continent, or a US ski region. */
   coarse: string;
 }
 

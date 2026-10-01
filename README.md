@@ -33,17 +33,29 @@ weighted highest — lift count alone puts a Michigan bump with twelve surface l
 
 ## Scoring
 
-| off by | 0 | 10km | 25km | 50km | 100km | 200km | 400km | 800km |
+Forgiving by design: a player who only ever finds the right continent still totals 400.
+
+A guess scores whichever is higher — its distance, or the best rung of the consolation ladder it
+landed on:
+
+| rung (global pool) | score | | rung (US pool) | score |
+|---|---|---|---|---|
+| right **state** | 75 | | right **state** | 75 |
+| right **country** | 60 | | right **ski region** | 40 |
+| right **continent** | 40 | | | |
+
+The state rung exists where there are state polygons — the United States today; another country's
+provinces would slot in given admin-1 geometry for them. Floors only ever lift a weak guess, never
+beat a close one. The ladder lives on each pool in [`src/game/pools.ts`](src/game/pools.ts).
+
+Distance alone: `100 · e^(−distance / DECAY_KM)`, with `DECAY_KM = 300`.
+
+| off by | 0 | 25km | 50km | 100km | 200km | 400km | 600km | 1000km |
 |---|---|---|---|---|---|---|---|---|
-| score | 100 | 92 | 81 | 66 | 43 | 19 | 4 | 0 |
+| score | 100 | 92 | 85 | 72 | 51 | 26 | 14 | 4 |
 
-`100 · e^(−distance / DECAY_KM)`, with `DECAY_KM = 120`. That is the one knob worth turning if the
-game plays too hard or too soft — it lives at the top of [`src/game/scoring.ts`](src/game/scoring.ts).
-
-Two consolation floors soften a bad guess, mirroring MapTap's. What counts as "close enough"
-depends on the pool: the global set floors on **country** (25) and **continent** (10), the US set
-on **state** (25) and **ski region** (10). Floors only ever lift a weak guess, never beat a close
-one.
+So within about 85km you beat the state rung, within about 150km the country rung. `DECAY_KM` is
+the one knob worth turning if that feels off — top of [`src/game/scoring.ts`](src/game/scoring.ts).
 
 ## Daily puzzles
 

@@ -3,6 +3,16 @@ import type { Resort } from './resorts.js';
 
 export type PoolId = 'ikon' | 'usa';
 
+/**
+ * One rung of a pool's consolation ladder. `key` names which resort/boundary
+ * level it compares; `label` is how the result card describes it.
+ */
+export interface Floor {
+  key: 'region' | 'fine' | 'coarse';
+  label: string;
+  value: number;
+}
+
 export type HomeView =
   | { kind: 'globe' }
   | { kind: 'bounds'; bounds: [[number, number], [number, number]] };
@@ -13,9 +23,11 @@ export interface Pool {
   label: string;
   /** What the prompt is asking for, e.g. "Ikon Pass destination". */
   noun: string;
-  /** How the two scoring floors are described on the result card. */
-  fineLabel: string;
-  coarseLabel: string;
+  /**
+   * Consolation floors, finest first. A guess that lands in the right place
+   * at some level scores at least that rung's value, however far off it was.
+   */
+  floors: Floor[];
   /**
    * Where the camera sits between rounds. A worldwide pool frames the whole
    * globe, which is a viewport calculation rather than a bounding box; a
@@ -37,8 +49,11 @@ export const POOLS: Record<PoolId, Pool> = {
     id: 'ikon',
     label: 'Ikon Pass',
     noun: 'Ikon Pass destination',
-    fineLabel: 'country',
-    coarseLabel: 'continent',
+    floors: [
+      { key: 'region', label: 'state', value: 75 },
+      { key: 'fine', label: 'country', value: 60 },
+      { key: 'coarse', label: 'continent', value: 40 },
+    ],
     home: { kind: 'globe' },
     wideLabel: 'GLOBE',
     async load() {
@@ -53,8 +68,10 @@ export const POOLS: Record<PoolId, Pool> = {
     id: 'usa',
     label: 'All USA',
     noun: 'US ski area',
-    fineLabel: 'state',
-    coarseLabel: 'region',
+    floors: [
+      { key: 'fine', label: 'state', value: 75 },
+      { key: 'coarse', label: 'region', value: 40 },
+    ],
     home: {
       kind: 'bounds',
       bounds: [

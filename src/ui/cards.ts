@@ -1,5 +1,4 @@
 import { kmToMiles } from '../game/geo.js';
-import type { Pool } from '../game/pools.js';
 import { MAX_SCORE, floorNote, type RoundResult } from '../game/scoring.js';
 import { bandFor } from '../game/share.js';
 import { button, el, typewriter } from './dom.js';
@@ -27,19 +26,14 @@ const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)
  * 950-mile miss inside the US printed "Wrong country." directly under
  * "+25 — right country". When a floor fires it decides the tone instead.
  */
-function snarkFor(result: RoundResult, pool: Pool): string {
-  if (result.floor === 'fine') {
+function snarkFor(result: RoundResult): string {
+  if (result.floor) {
+    const { label } = result.floor;
     return pick([
-      `Right ${pool.fineLabel}, wrong mountain.`,
-      `You found the ${pool.fineLabel}, at least.`,
+      `Right ${label}, wrong mountain.`,
+      `You found the ${label}, at least.`,
+      `The correct ${label}. Nothing more.`,
       'Close enough to count. Barely.',
-    ]);
-  }
-  if (result.floor === 'coarse') {
-    return pick([
-      `Right ${pool.coarseLabel}, and that is all.`,
-      `The correct ${pool.coarseLabel}. Nothing more.`,
-      'Vaguely the right part of the world.',
     ]);
   }
   return pick(SNARK.find(([max]) => result.distanceKm < max)?.[1] ?? ['']);
@@ -84,13 +78,8 @@ export function confirmCard(resortName: string, onConfirm: () => void): HTMLElem
   );
 }
 
-export function resultCard(
-  result: RoundResult,
-  pool: Pool,
-  isLast: boolean,
-  onNext: () => void,
-): HTMLElement {
-  const bonus = floorNote(result, pool);
+export function resultCard(result: RoundResult, isLast: boolean, onNext: () => void): HTMLElement {
+  const bonus = floorNote(result);
   const next = button(isLast ? 'SEE RESULTS' : 'NEXT MOUNTAIN', onNext);
 
   return el(
@@ -111,7 +100,7 @@ export function resultCard(
         : null,
     ),
     bonus ? el('p', { class: 'result-line result-floor', text: bonus }) : null,
-    el('p', { class: 'result-snark', text: snarkFor(result, pool) }),
+    el('p', { class: 'result-snark', text: snarkFor(result) }),
     el('div', { class: 'card-actions' }, next),
   );
 }

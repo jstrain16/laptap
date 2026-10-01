@@ -246,13 +246,20 @@ function buildStates(): BoundaryCollection {
   return roundCoords(fc as unknown as BoundaryCollection);
 }
 
-async function buildCountries(): Promise<BoundaryCollection> {
+/**
+ * The world boundary file, with the United States replaced by its states so
+ * the global pool can award a "right state" floor. Each state feature carries
+ * all three levels — state, country, continent — and every other country
+ * carries two. Other countries' provinces would slot in the same way given
+ * admin-1 geometry for them.
+ */
+async function buildWorld(states: BoundaryCollection): Promise<BoundaryCollection> {
   const raw = JSON.parse(
     await cached(COUNTRIES_SOURCE, 'ne_50m_countries.geojson', 'Natural Earth countries'),
   ) as {
     features: { properties: Record<string, string>; geometry: unknown }[];
   };
-  const features = raw.features
+  const countries = raw.features
     // Antarctica has no Ikon destinations and a vast, jagged coastline.
     .filter((f) => f.properties.CONTINENT !== 'Antarctica')
     .map((f) => ({
@@ -262,19 +269,29 @@ async function buildCountries(): Promise<BoundaryCollection> {
         group: f.properties.CONTINENT ?? '',
       },
       geometry: f.geometry,
-    }));
+    }))
+    .filter((f) => f.properties.name !== 'United States');
 
   // Simplify through topology so shared borders stay shared — simplifying each
   // country on its own would tear gaps and overlaps along every frontier.
-  const pre = presimplify(topology({ c: { type: 'FeatureCollection', features } }));
+  const pre = presimplify(topology({ c: { type: 'FeatureCollection', features: countries } }));
   const topo = simplify(pre, quantile(pre, BOUNDARY_DETAIL));
-  const collection = feature(topo, topo.objects.c!);
-  return roundCoords(collection as unknown as BoundaryCollection);
+  const world = roundCoords(feature(topo, topo.objects.c!) as unknown as BoundaryCollection);
+
+  // us-atlas states are already lon/lat and already simplified; retag them for
+  // the world file's three-level scheme and append.
+  for (const st of states.features) {
+    world.features.push({
+      ...st,
+      properties: { region: st.properties.name, name: 'United States', group: 'North America' },
+    });
+  }
+  return world;
 }
 
 // --- resorts ----------------------------------------------------------------
 
-type Candidate = Omit<Resort, 'tier' | 'fine' | 'coarse'> & {
+type Candidate = Omit<Resort, 'tier' | 'fine' | 'coarse' | 'region'> & {
   fame: number;
   /** OpenSkiMap's own country and admin region — the authority for the floors. */
   country: string;
@@ -310,12 +327,15 @@ function assignTiers(
   cuts: readonly number[],
   fine: (c: Candidate) => string,
   coarse: (c: Candidate) => string,
+  region: (c: Candidate) => string | undefined = () => undefined,
 ): Resort[] {
   return ordered.map((c, i) => {
     const frac = (i + 1) / ordered.length;
     const { fame: _fame, country: _country, region: _region, ...rest } = c;
+    const sub = region(c);
     return {
       ...rest,
+      ...(sub ? { region: sub } : {}),
       fine: fine(c),
       coarse: coarse(c),
       tier: ((cuts.findIndex((cut) => frac <= cut) + 1) || cuts.length) as Resort['tier'],
@@ -373,8 +393,10 @@ function checkPool(
 
 async function main() {
   const states = buildStates();
-  const countries = await buildCountries();
-  console.log(`boundaries: ${states.features.length} states, ${countries.features.length} countries`);
+  const countries = await buildWorld(states);
+  console.log(
+    `boundaries: ${states.features.length} states, ${countries.features.length} world features`,
+  );
 
   const src = JSON.parse(await cached(SOURCE, 'ski_areas.geojson', 'OpenSkiMap')) as {
     features: SkiAreaFeature[];
@@ -447,11 +469,12 @@ async function main() {
   const ikon = assignTiers(
     ikonCandidates,
     [0.2, 0.4, 0.6, 0.8, 1],
-    // Taken from OpenSkiMap rather than from the polygons, so that checking a
-    // resort against the polygons below is a real test of the boundary file and
-    // not a tautology. An Andorran resort landing in France has to fail here.
     (c) => c.country,
     (c) => boundaryAt(c, countries)?.group ?? '',
+    // The state rung only exists where the world file has state polygons, so
+    // read it from the polygon rather than from OpenSkiMap's region string —
+    // the two must agree for the floor to ever fire.
+    (c) => boundaryAt(c, countries)?.region,
   );
 
   // --- USA pool -----------------------------------------------------------
@@ -538,7 +561,7 @@ async function main() {
   const size = (p: string) => `${(statSync(resolve(ROOT, 'src/data', p)).size / 1024).toFixed(0)}KB`;
   console.log(`
   files          resorts-ikon ${size('resorts-ikon.json')}  resorts-usa ${size('resorts-usa.json')}  countries ${size('countries.json')}  states ${size('states.json')}
-  ikon spread    ${new Set(ikon.map((r) => r.fine)).size} countries, ${new Set(ikon.map((r) => r.coarse)).size} continents
+  ikon spread    ${new Set(ikon.map((r) => r.fine)).size} countries, ${new Set(ikon.map((r) => r.coarse)).size} continents, ${ikon.filter((r) => r.region).length} with a state rung
   ikon tier 1    ${ikon.filter((r) => r.tier === 1).slice(0, 5).map((r) => r.name).join(', ')}
   ikon tier 5    ${ikon.filter((r) => r.tier === 5).slice(-5).map((r) => r.name).join(', ')}
 `);
