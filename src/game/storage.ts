@@ -1,6 +1,9 @@
 import type { LatLng } from './geo.js';
 
-const KEY = 'laptap.v1';
+// Bump when a change makes old saves meaningless — v2: the Oct 1 puzzle's
+// mountains changed when the tier sizes did, so v1 saves would replay
+// against the wrong five.
+const KEY = 'laptap.v2';
 
 export interface StoredGame {
   /** "<pool>:<puzzle number>" — each pool keeps its own daily result. */
