@@ -116,6 +116,25 @@ The build hard-fails if any of that drifts — an id that stops resolving, a res
 into the wrong country, a tier too small to avoid repeats, or any of six spot-checked coordinates
 moving more than 0.05°.
 
+## Stats
+
+Play is tracked anonymously in Supabase — a random id per browser, no accounts, no PII. The site
+writes one row per event (`start` when a puzzle opens, `finish` with the score and every guess) to
+an append-only `plays` table whose row-level security lets the public key insert and nothing else;
+nothing is readable back through the site.
+
+Read it in the Supabase dashboard via three views:
+
+| view | answers |
+|---|---|
+| `daily_stats` | players, finishers, average/median/best score — per day, per pool |
+| `mountain_stats` | per mountain: plays, average score, average miss in miles, bullseyes |
+| `overall_stats` | unique players, games finished, days with play |
+
+The schema is in [`supabase/migrations/`](supabase/migrations/). The client is
+[`src/game/track.ts`](src/game/track.ts); with no `VITE_SUPABASE_*` configured it's a no-op, so
+local dev and forks run with analytics off (see `.env.example`).
+
 ## Layout
 
 ```

@@ -6,6 +6,7 @@ import { poolFromQuery } from './game/pools.js';
 import { copy, shareText } from './game/share.js';
 import { createGame } from './game/state.js';
 import { load, save, streak } from './game/storage.js';
+import { buildEvent, track } from './game/track.js';
 import { basemapLabel, createMap, BASEMAP_ORDER, type GameMap } from './map/map.js';
 import { MarkerLayer } from './map/markers.js';
 import { confirmCard, promptCard, resultCard, summaryCard } from './ui/cards.js';
@@ -113,6 +114,10 @@ async function main(): Promise<void> {
     );
   }
 
+  // A reload of a finished game re-enters the summary through restore(); only
+  // a game finished in this session is a real "finish" worth counting.
+  let restoring = false;
+
   function showSummary(): void {
     markers.clear();
     map.stopSpin();
@@ -120,6 +125,9 @@ async function main(): Promise<void> {
     // Pull back to show every mountain from the run at once.
     map.frame(game.state.results.flatMap((r) => [r.guess, r.resort as LatLng]));
     persist();
+    if (!restoring) {
+      track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
+    }
     const played = streak(pool.id, puzzle.number);
     const card = summaryCard(game.state.results, game.state.total, () =>
       copy(shareText(date, pool, game.state.results, game.state.total)),
@@ -157,8 +165,11 @@ async function main(): Promise<void> {
 
   const saved = load(saveKey);
   if (saved?.guesses.length) {
+    restoring = true;
     game.restore(saved.guesses);
+    restoring = false;
   } else {
+    track(buildEvent('start', pool, puzzle.number, date));
     showPrompt();
   }
 }
