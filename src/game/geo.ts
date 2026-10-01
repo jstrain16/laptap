@@ -54,21 +54,27 @@ function pointInPolygon(lng: number, lat: number, rings: Ring[]): boolean {
   return true;
 }
 
-export interface StateFeature {
+/**
+ * One administrative shape. `name` is the fine-grained label (a US state, or a
+ * country in the global pool) and `group` the coarse one it belongs to (a ski
+ * region, or a continent). Both pools use the same shape, so the scoring floors
+ * are written once.
+ */
+export interface BoundaryFeature {
   type: 'Feature';
-  properties: { name: string };
+  properties: { name: string; group: string };
   bbox?: [number, number, number, number];
   geometry:
     | { type: 'Polygon'; coordinates: Ring[] }
     | { type: 'MultiPolygon'; coordinates: Ring[][] };
 }
 
-export interface StateCollection {
+export interface BoundaryCollection {
   type: 'FeatureCollection';
-  features: StateFeature[];
+  features: BoundaryFeature[];
 }
 
-function bboxOf(f: StateFeature): [number, number, number, number] {
+function bboxOf(f: BoundaryFeature): [number, number, number, number] {
   if (f.bbox) return f.bbox;
   let minX = Infinity;
   let minY = Infinity;
@@ -91,11 +97,14 @@ function bboxOf(f: StateFeature): [number, number, number, number] {
 }
 
 /**
- * Which US state contains this point, or null if it is offshore / outside the
- * country. The bbox pre-filter keeps this cheap enough to call on every click.
+ * Which boundary contains this point, or null if it is out at sea. The bbox
+ * pre-filter keeps this cheap enough to call on every click.
  */
-export function stateAt(point: LatLng, states: StateCollection): string | null {
-  for (const f of states.features) {
+export function boundaryAt(
+  point: LatLng,
+  boundaries: BoundaryCollection,
+): BoundaryFeature['properties'] | null {
+  for (const f of boundaries.features) {
     const [minX, minY, maxX, maxY] = bboxOf(f);
     if (point.lng < minX || point.lng > maxX || point.lat < minY || point.lat > maxY) {
       continue;
@@ -103,7 +112,7 @@ export function stateAt(point: LatLng, states: StateCollection): string | null {
     const polys =
       f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
     for (const rings of polys) {
-      if (pointInPolygon(point.lng, point.lat, rings)) return f.properties.name;
+      if (pointInPolygon(point.lng, point.lat, rings)) return f.properties;
     }
   }
   return null;

@@ -1,13 +1,12 @@
-import { haversineKm, stateAt, type LatLng, type StateCollection } from './geo.js';
-import { regionForState, type Region } from './regions.js';
+import { boundaryAt, haversineKm, type BoundaryCollection, type LatLng } from './geo.js';
+import type { Pool } from './pools.js';
 import type { Resort } from './resorts.js';
 
 /**
  * MapTap scores a guess with `exp(-(d / 16250) * 3.5)`, where 16,250km is half
- * the Earth's circumference. laptap keeps that shape but retunes it: US resorts
- * sit 20-50km apart in Colorado and Vermont, so on the original curve a 100km
- * miss would still score 92. This is the one knob worth turning if the game
- * plays too hard or too soft.
+ * the Earth's circumference. laptap keeps that shape but retunes it: ski
+ * resorts cluster, so on the original curve a 100km miss would still score 92.
+ * This is the one knob worth turning if the game plays too hard or too soft.
  *
  *     0km -> 100    25km -> 81    100km -> 43    400km -> 4
  *    10km ->  92    50km -> 66    200km -> 19    800km -> 0
@@ -19,15 +18,15 @@ export const MULTIPLIERS = [1, 1, 2, 3, 3] as const;
 export const MAX_SCORE = MULTIPLIERS.reduce((a, b) => a + b, 0) * 100;
 
 /**
- * Consolation floors, laptap's parody of MapTap's country/continent floors:
- * land in the right state and you cannot score below 25, right region and you
- * cannot score below 10. Capped so a floor never beats a genuinely close tap.
+ * Consolation floors, laptap's parody of MapTap's country/continent floors.
+ * What counts as "close enough" depends on the pool: the global set floors on
+ * country and continent, the US set on state and ski region.
  */
-export const STATE_FLOOR = 25;
-export const REGION_FLOOR = 10;
+export const FINE_FLOOR = 25;
+export const COARSE_FLOOR = 10;
 export const FLOOR_CAP = 80;
 
-export type FloorKind = 'state' | 'region' | null;
+export type FloorKind = 'fine' | 'coarse' | null;
 
 export interface RoundResult {
   resort: Resort;
@@ -36,10 +35,11 @@ export interface RoundResult {
   /** 0-100, before the round multiplier. */
   baseScore: number;
   multiplier: number;
-  /** baseScore * multiplier, rounded — what actually lands on the scoreboard. */
+  /** baseScore * multiplier, rounded — what lands on the scoreboard. */
   score: number;
-  guessState: string | null;
-  guessRegion: Region | null;
+  /** Where the guess landed, e.g. "Austria" / "Europe" — null if out at sea. */
+  guessFine: string | null;
+  guessCoarse: string | null;
   /** Which floor lifted the score, if any. */
   floor: FloorKind;
   /** How many points the floor added, for the result card's bonus line. */
@@ -55,22 +55,23 @@ export function scoreRound(
   resort: Resort,
   guess: LatLng,
   roundIndex: number,
-  states: StateCollection,
+  boundaries: BoundaryCollection,
 ): RoundResult {
   const distanceKm = haversineKm(guess, resort);
   const raw = distanceScore(distanceKm);
 
-  const guessState = stateAt(guess, states);
-  const guessRegion = regionForState(guessState);
+  const hit = boundaryAt(guess, boundaries);
+  const guessFine = hit?.name ?? null;
+  const guessCoarse = hit?.group || null;
 
   let floor: FloorKind = null;
   let floorValue = 0;
-  if (guessState && guessState === resort.state) {
-    floor = 'state';
-    floorValue = STATE_FLOOR;
-  } else if (guessRegion && guessRegion === resort.region) {
-    floor = 'region';
-    floorValue = REGION_FLOOR;
+  if (guessFine && guessFine === resort.fine) {
+    floor = 'fine';
+    floorValue = FINE_FLOOR;
+  } else if (guessCoarse && guessCoarse === resort.coarse) {
+    floor = 'coarse';
+    floorValue = COARSE_FLOOR;
   }
 
   // A floor only ever lifts a weak guess, and only up to FLOOR_CAP.
@@ -87,11 +88,22 @@ export function scoreRound(
     baseScore,
     multiplier,
     score: baseScore * multiplier,
-    guessState,
-    guessRegion,
+    guessFine,
+    guessCoarse,
     floor,
     floorLift: floor ? baseScore - Math.round(raw) : 0,
   };
+}
+
+/** "right country (Japan)" — the green line on the result card. */
+export function floorNote(result: RoundResult, pool: Pool): string | null {
+  if (result.floor === 'fine') {
+    return `+${result.floorLift} — right ${pool.fineLabel} (${result.resort.fine})`;
+  }
+  if (result.floor === 'coarse') {
+    return `+${result.floorLift} — right ${pool.coarseLabel} (${result.resort.coarse})`;
+  }
+  return null;
 }
 
 export const totalScore = (rounds: readonly RoundResult[]) =>

@@ -1,41 +1,47 @@
 import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap } from 'maplibre-gl';
 
-import type { LatLng } from '../game/geo.js';
-import states from '../data/states.json' with { type: 'json' };
+import type { BoundaryCollection, LatLng } from '../game/geo.js';
+import type { Pool } from '../game/pools.js';
 
-export type Basemap = 'relief' | 'satellite';
+export type Basemap = 'satellite' | 'atlas';
 
-// Esri's public tile services: no API key, no sign-up, and crucially no place
-// labels — a labelled basemap would just show you the answer. Both are declared
-// up front and toggled by layer visibility, so switching never re-creates the
-// style or drops the markers drawn on top of it.
-const BASEMAPS: Record<Basemap, { url: string; maxzoom: number }> = {
-  relief: {
-    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}',
-    maxzoom: 13,
-  },
+/**
+ * MapTap's globe is a natural-earth texture: green land, tan desert, white ice,
+ * deep blue ocean. These are the two keyless Esri services that come closest.
+ * Neither carries place labels — a labelled basemap would show you the answer.
+ *
+ * Both are declared up front and toggled by layer visibility, so switching
+ * never re-creates the style or drops the pins drawn on top of it.
+ */
+const BASEMAPS: Record<
+  Basemap,
+  { url: string; maxzoom: number; label: string; border: string }
+> = {
   satellite: {
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     maxzoom: 17,
+    label: 'SATELLITE',
+    border: '#eaf9ff',
+  },
+  atlas: {
+    // Esri caps this one at zoom 8; MapLibre upscales beyond that rather than
+    // going blank, which is the right trade for a stylised overview map.
+    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}',
+    maxzoom: 8,
+    label: 'ATLAS',
+    // A pale atlas needs dark borders; the light ones vanish into the land.
+    border: '#1d3b52',
   },
 };
 
-const ATTRIBUTION = 'Tiles &copy; Esri, USGS, NOAA, Maxar &middot; ski areas &copy; OpenSkiMap';
+export const BASEMAP_ORDER: Basemap[] = ['satellite', 'atlas'];
+export const basemapLabel = (kind: Basemap) => BASEMAPS[kind].label;
 
-/** The lower 48 — where the camera sits by default, and 98% of the pool. */
-export const CONUS: LngLatBoundsLike = [
-  [-125.5, 24.0],
-  [-66.5, 49.8],
-];
-
-/** Wide enough to include Alaska, for the FIT USA button. */
-export const WHOLE_USA: LngLatBoundsLike = [
-  [-168.0, 23.0],
-  [-66.0, 64.0],
-];
+const ATTRIBUTION =
+  'Tiles &copy; Esri, Maxar, Earthstar Geographics, USGS &middot; ski areas &copy; OpenSkiMap';
 
 const layerId = (kind: Basemap) => `basemap-${kind}`;
-const STATES_SOURCE = 'states';
+const BOUNDARY_SOURCE = 'boundaries';
 
 export interface GameMap {
   readonly raw: MapLibreMap;
@@ -44,13 +50,17 @@ export interface GameMap {
   /** Called with the tapped point; ignored while the map is locked. */
   onPick(handler: (point: LatLng) => void): void;
   setLocked(locked: boolean): void;
-  fitCONUS(animate?: boolean): void;
-  fitUSA(): void;
+  fitHome(animate?: boolean): void;
+  fitWide(): void;
   frame(points: LatLng[]): void;
 }
 
-export async function createMap(container: HTMLElement): Promise<GameMap> {
-  let basemap: Basemap = 'relief';
+export async function createMap(
+  container: HTMLElement,
+  pool: Pool,
+  boundaries: BoundaryCollection,
+): Promise<GameMap> {
+  let basemap: Basemap = 'satellite';
   let locked = false;
   let pickHandler: ((point: LatLng) => void) | null = null;
 
@@ -59,80 +69,67 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
     style: {
       version: 8,
       sources: {
-        'basemap-relief': {
-          type: 'raster',
-          tiles: [BASEMAPS.relief.url],
-          tileSize: 256,
-          maxzoom: BASEMAPS.relief.maxzoom,
-        },
         'basemap-satellite': {
           type: 'raster',
           tiles: [BASEMAPS.satellite.url],
           tileSize: 256,
           maxzoom: BASEMAPS.satellite.maxzoom,
         },
-        [STATES_SOURCE]: { type: 'geojson', data: states as never },
+        'basemap-atlas': {
+          type: 'raster',
+          tiles: [BASEMAPS.atlas.url],
+          tileSize: 256,
+          maxzoom: BASEMAPS.atlas.maxzoom,
+        },
+        [BOUNDARY_SOURCE]: { type: 'geojson', data: boundaries as never },
       },
       layers: [
         { id: 'bg', type: 'background', paint: { 'background-color': '#060910' } },
         {
-          id: layerId('relief'),
-          type: 'raster',
-          source: 'basemap-relief',
-          layout: { visibility: 'visible' },
-          // Esri ships shaded relief as pale beige on white, which glares
-          // against the terminal palette and washes the state lines out.
-          // Darkening and desaturating it keeps the landforms — the only thing
-          // you actually navigate by — while letting the overlay read.
-          paint: {
-            'raster-brightness-max': 0.46,
-            'raster-contrast': 0.12,
-            'raster-saturation': -0.45,
-          },
-        },
-        {
           id: layerId('satellite'),
           type: 'raster',
           source: 'basemap-satellite',
-          layout: { visibility: 'none' },
-          paint: { 'raster-brightness-max': 0.88 },
+          layout: { visibility: 'visible' },
         },
         {
-          id: 'state-lines',
+          id: layerId('atlas'),
+          type: 'raster',
+          source: 'basemap-atlas',
+          layout: { visibility: 'none' },
+        },
+        {
+          id: 'boundary-lines',
           type: 'line',
-          source: STATES_SOURCE,
+          source: BOUNDARY_SOURCE,
           paint: {
-            'line-color': '#7fe7ff',
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.7, 8, 1.6],
-            'line-opacity': 0.55,
+            // Light enough to read over both basemaps without competing with
+            // the terrain, which is the thing you actually navigate by. Held up
+            // at low zoom, where a hairline over satellite imagery disappears
+            // exactly when you most need the borders to aim with.
+            'line-color': BASEMAPS.satellite.border,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 1.5, 0.7, 4, 1, 9, 1.8],
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 1.5, 0.65, 6, 0.45],
           },
         },
       ],
     },
-    bounds: CONUS,
-    // No maxBounds. Showing the width of the lower 48 on a 375px phone needs
-    // roughly zoom 1.9, and at that zoom the viewport is taller than any
-    // sensible box around the country — MapLibre then stops honouring
-    // fitBounds and pins the camera to the middle of the box instead, which
-    // parked the country off the bottom of the screen. FIT USA and the
-    // automatic refit between rounds are enough to keep players oriented.
-    minZoom: 1.8,
-    maxZoom: 12,
+    bounds: pool.home,
+    minZoom: 1.2,
+    maxZoom: 13,
     attributionControl: { compact: true, customAttribution: ATTRIBUTION },
     dragRotate: false,
     pitchWithRotate: false,
     touchZoomRotate: true,
     renderWorldCopies: false,
   });
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+
   // Handy when a camera or tile problem needs poking at from the console.
-  // Not `window.map` — the <div id="map"> already owns that name. Assigned
-  // before any awaiting so a stuck map is still inspectable.
+  // Not `window.map` — the <div id="map"> already owns that name.
   if (import.meta.env.DEV) {
     (window as unknown as { laptapMap: MapLibreMap }).laptapMap = map;
   }
-
-  map.touchZoomRotate.disableRotation();
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
   // Without a handler MapLibre swallows style and tile errors silently, which
   // makes a bad paint property look like a map that simply never loads.
@@ -158,8 +155,8 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
   new ResizeObserver(() => map.resize()).observe(container);
 
   // Wait for the style, not for `load` — `load` also waits on the first screen
-  // of Esri tiles, which on a cold start left the player staring at an empty
-  // page for several seconds. The style is inline, so this settles almost
+  // of tiles, which on a cold start left the player staring at an empty page
+  // for several seconds. The style is inline, so this settles almost
   // immediately, and it is all the caller needs before adding its own layers.
   //
   // Listening for a single `style.load` is not enough: with an inline style
@@ -187,14 +184,13 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
     map.on('load', finish);
   });
   map.resize();
-  map.fitBounds(CONUS, { padding: visiblePadding(), duration: 0 });
 
   /**
    * The top bar and the card stack cover the map, so centring a fit in the
-   * whole container buries the lower 48 behind the card on a tall phone.
-   * Padding the camera by what is actually obscured keeps the action in the
-   * visible band. Scaled back if it would leave no viewport at all, since
-   * fitBounds throws in that case.
+   * whole container buries the target behind the card on a tall phone. Padding
+   * the camera by what is actually obscured keeps the action in the visible
+   * band. Scaled back if it would leave no viewport at all, since fitBounds
+   * throws in that case.
    */
   function visiblePadding(): maplibregl.PaddingOptions {
     const height = map.getContainer().clientHeight;
@@ -213,6 +209,8 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
     };
   }
 
+  map.fitBounds(pool.home as LngLatBoundsLike, { padding: visiblePadding(), duration: 0 });
+
   return {
     raw: map,
     getBasemap: () => basemap,
@@ -220,6 +218,7 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
       if (kind === basemap) return;
       map.setLayoutProperty(layerId(basemap), 'visibility', 'none');
       map.setLayoutProperty(layerId(kind), 'visibility', 'visible');
+      map.setPaintProperty('boundary-lines', 'line-color', BASEMAPS[kind].border);
       basemap = kind;
     },
     onPick(handler) {
@@ -229,11 +228,14 @@ export async function createMap(container: HTMLElement): Promise<GameMap> {
       locked = next;
       applyCursor();
     },
-    fitCONUS(animate = true) {
-      map.fitBounds(CONUS, { padding: visiblePadding(), duration: animate ? 600 : 0 });
+    fitHome(animate = true) {
+      map.fitBounds(pool.home as LngLatBoundsLike, {
+        padding: visiblePadding(),
+        duration: animate ? 600 : 0,
+      });
     },
-    fitUSA() {
-      map.fitBounds(WHOLE_USA, { padding: visiblePadding(), duration: 600 });
+    fitWide() {
+      map.fitBounds(pool.wide as LngLatBoundsLike, { padding: visiblePadding(), duration: 600 });
     },
     frame(points) {
       if (points.length === 0) return;

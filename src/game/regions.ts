@@ -1,6 +1,6 @@
-// Ski regions, used for the "right region" scoring floor — laptap's parody of
-// MapTap's continent floor. Grouped the way a skier thinks about them rather
-// than the way the Census Bureau does.
+// Ski regions: the coarse scoring floor for the US pool, standing in for the
+// continent floor the global pool uses. Grouped the way a skier thinks about
+// them rather than the way the Census Bureau does.
 
 export type Region =
   | 'rockies'
@@ -10,14 +10,6 @@ export type Region =
   | 'mid-atlantic-south'
   | 'alaska';
 
-export const REGION_LABELS: Record<Region, string> = {
-  rockies: 'the Rockies',
-  'sierra-cascades': 'the Sierra & Cascades',
-  northeast: 'the Northeast',
-  midwest: 'the Midwest',
-  'mid-atlantic-south': 'the Mid-Atlantic & South',
-  alaska: 'Alaska',
-};
 
 const STATE_REGION: Record<string, Region> = {
   // Rockies and the Interior West

@@ -1,4 +1,4 @@
-import type { StateCollection, LatLng } from './geo.js';
+import type { BoundaryCollection, LatLng } from './geo.js';
 import type { Puzzle } from './daily.js';
 import type { Resort } from './resorts.js';
 import { MULTIPLIERS, scoreRound, totalScore, type RoundResult } from './scoring.js';
@@ -33,7 +33,7 @@ export interface Game {
   subscribe(fn: (state: GameState) => void): void;
 }
 
-export function createGame(puzzle: Puzzle, states: StateCollection): Game {
+export function createGame(puzzle: Puzzle, boundaries: BoundaryCollection): Game {
   const state: GameState = {
     phase: 'prompt',
     roundIndex: 0,
@@ -49,7 +49,7 @@ export function createGame(puzzle: Puzzle, states: StateCollection): Game {
   function commit(point: LatLng): RoundResult | null {
     const resort = currentResort();
     if (!resort) return null;
-    const result = scoreRound(resort, point, state.roundIndex, states);
+    const result = scoreRound(resort, point, state.roundIndex, boundaries);
     state.results.push(result);
     state.total = totalScore(state.results);
     state.pending = null;

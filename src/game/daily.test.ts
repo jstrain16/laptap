@@ -1,77 +1,118 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ALL_RESORTS, dateFromQuery, puzzleFor } from './daily.ts';
-import { TIER_COUNT } from './resorts.ts';
+import { dateFromQuery, puzzleFor } from './daily.ts';
+import { COUNTRIES, IKON, STATES, USA } from './fixtures.test-util.ts';
+import { boundaryAt } from './geo.ts';
+import { POOLS, poolFromQuery, type PoolId } from './pools.ts';
+import { TIER_COUNT, type Resort } from './resorts.ts';
 import { seededShuffle } from './rng.ts';
 
-test('the pool is well formed', () => {
-  assert.ok(ALL_RESORTS.length >= 450, `only ${ALL_RESORTS.length} resorts`);
-  for (const r of ALL_RESORTS) {
-    assert.ok(r.name && r.state && r.region, `incomplete record: ${JSON.stringify(r)}`);
-    assert.ok(r.tier >= 1 && r.tier <= TIER_COUNT, `${r.name} has tier ${r.tier}`);
-    assert.ok(Number.isFinite(r.lat) && Number.isFinite(r.lng));
-  }
-  assert.equal(new Set(ALL_RESORTS.map((r) => r.name)).size, ALL_RESORTS.length, 'names collide');
-});
+const POOL_DATA: [PoolId, Resort[], number][] = [
+  ['ikon', IKON, 80],
+  ['usa', USA, 450],
+];
 
-test('a puzzle is five distinct resorts, one per tier, easiest first', () => {
-  const { resorts } = puzzleFor(new Date(2026, 9, 1));
-  assert.equal(resorts.length, TIER_COUNT);
-  assert.deepEqual(
-    resorts.map((r) => r.tier),
-    [1, 2, 3, 4, 5],
-  );
-  assert.equal(new Set(resorts.map((r) => r.id)).size, TIER_COUNT);
-});
+for (const [id, resorts, minSize] of POOL_DATA) {
+  test(`${id}: the pool is well formed`, () => {
+    assert.ok(resorts.length >= minSize, `only ${resorts.length} resorts`);
+    for (const r of resorts) {
+      assert.ok(r.name && r.place && r.fine && r.coarse, `incomplete: ${JSON.stringify(r)}`);
+      assert.ok(r.tier >= 1 && r.tier <= TIER_COUNT, `${r.name} has tier ${r.tier}`);
+      assert.ok(Math.abs(r.lat) <= 90 && Math.abs(r.lng) <= 180, `${r.name} is off the planet`);
+    }
+    assert.equal(new Set(resorts.map((r) => r.name)).size, resorts.length, 'names collide');
+    assert.equal(new Set(resorts.map((r) => r.id)).size, resorts.length, 'ids collide');
+  });
 
-test('the same calendar day always yields the same puzzle', () => {
-  const morning = puzzleFor(new Date(2026, 9, 1, 6, 30));
-  const night = puzzleFor(new Date(2026, 9, 1, 23, 59));
-  assert.equal(morning.number, night.number);
-  assert.deepEqual(
-    morning.resorts.map((r) => r.id),
-    night.resorts.map((r) => r.id),
-  );
-});
+  test(`${id}: a puzzle is five distinct resorts, one per tier, easiest first`, () => {
+    const { resorts: picked } = puzzleFor(new Date(2026, 9, 1), id, resorts);
+    assert.equal(picked.length, TIER_COUNT);
+    assert.deepEqual(
+      picked.map((r) => r.tier),
+      [1, 2, 3, 4, 5],
+    );
+    assert.equal(new Set(picked.map((r) => r.id)).size, TIER_COUNT);
+  });
 
-test('consecutive days differ, and puzzle numbers advance by one', () => {
-  const a = puzzleFor(new Date(2026, 9, 1));
-  const b = puzzleFor(new Date(2026, 9, 2));
-  assert.equal(b.number, a.number + 1);
+  test(`${id}: the same calendar day always yields the same puzzle`, () => {
+    const morning = puzzleFor(new Date(2026, 9, 1, 6, 30), id, resorts);
+    const night = puzzleFor(new Date(2026, 9, 1, 23, 59), id, resorts);
+    assert.equal(morning.number, night.number);
+    assert.deepEqual(
+      morning.resorts.map((r) => r.id),
+      night.resorts.map((r) => r.id),
+    );
+  });
+
+  test(`${id}: consecutive days differ and puzzle numbers advance by one`, () => {
+    const a = puzzleFor(new Date(2026, 9, 1), id, resorts);
+    const b = puzzleFor(new Date(2026, 9, 2), id, resorts);
+    assert.equal(b.number, a.number + 1);
+    assert.notDeepEqual(
+      a.resorts.map((r) => r.id),
+      b.resorts.map((r) => r.id),
+    );
+  });
+
+  test(`${id}: no resort repeats until its tier is exhausted`, () => {
+    const smallest = Math.min(
+      ...Array.from({ length: TIER_COUNT }, (_, i) =>
+        resorts.filter((r) => r.tier === i + 1).length,
+      ),
+    );
+    const seen = Array.from({ length: TIER_COUNT }, () => new Set<string>());
+    for (let d = 0; d < smallest; d++) {
+      for (const [i, r] of puzzleFor(new Date(2026, 9, 1 + d), id, resorts).resorts.entries()) {
+        assert.ok(!seen[i]!.has(r.id), `${r.name} repeated on day ${d}`);
+        seen[i]!.add(r.id);
+      }
+    }
+  });
+}
+
+test('the two pools ask different questions on the same day', () => {
+  const a = puzzleFor(new Date(2026, 9, 1), 'ikon', IKON);
+  const b = puzzleFor(new Date(2026, 9, 1), 'usa', USA);
   assert.notDeepEqual(
-    a.resorts.map((r) => r.id),
-    b.resorts.map((r) => r.id),
+    a.resorts.map((r) => r.name),
+    b.resorts.map((r) => r.name),
   );
 });
 
-test('the epoch day is puzzle #1', () => {
-  assert.equal(puzzleFor(new Date(2026, 9, 1)).number, 1);
-});
-
-test('no resort repeats until its tier is exhausted', () => {
-  const smallestTier = Math.min(
-    ...Array.from({ length: TIER_COUNT }, (_, i) =>
-      ALL_RESORTS.filter((r) => r.tier === i + 1).length,
-    ),
-  );
-  const seen = Array.from({ length: TIER_COUNT }, () => new Set<string>());
-  for (let d = 0; d < smallestTier; d++) {
-    const { resorts } = puzzleFor(new Date(2026, 9, 1 + d));
-    resorts.forEach((r, i) => {
-      assert.ok(!seen[i]!.has(r.id), `${r.name} repeated on day ${d}`);
-      seen[i]!.add(r.id);
-    });
-  }
-});
-
-test('puzzles stay stable going backwards past the epoch', () => {
-  const before = puzzleFor(new Date(2026, 8, 20));
+test('the epoch day is puzzle #1 and earlier days stay stable', () => {
+  assert.equal(puzzleFor(new Date(2026, 9, 1), 'ikon', IKON).number, 1);
+  const before = puzzleFor(new Date(2026, 8, 20), 'ikon', IKON);
   assert.equal(before.resorts.length, TIER_COUNT);
   assert.deepEqual(
     before.resorts.map((r) => r.id),
-    puzzleFor(new Date(2026, 8, 20)).resorts.map((r) => r.id),
+    puzzleFor(new Date(2026, 8, 20), 'ikon', IKON).resorts.map((r) => r.id),
   );
+});
+
+test('every resort sits inside the boundary it claims', () => {
+  for (const [resorts, boundaries] of [
+    [IKON, COUNTRIES],
+    [USA, STATES],
+  ] as const) {
+    const wrong = resorts.filter((r) => boundaryAt(r, boundaries)?.name !== r.fine);
+    assert.ok(
+      wrong.length / resorts.length < 0.05,
+      `${wrong.length} resorts geocode outside their own boundary: ` +
+        wrong.slice(0, 3).map((r) => r.name).join(', '),
+    );
+  }
+});
+
+test('the Ikon pool really is global', () => {
+  assert.ok(new Set(IKON.map((r) => r.fine)).size >= 10, 'expected at least ten countries');
+  assert.ok(new Set(IKON.map((r) => r.coarse)).size >= 4, 'expected at least four continents');
+  for (const continent of ['North America', 'Europe', 'Asia', 'Oceania', 'South America']) {
+    assert.ok(
+      IKON.some((r) => r.coarse === continent),
+      `no Ikon destination on ${continent}`,
+    );
+  }
 });
 
 test('seededShuffle is deterministic and order-changing', () => {
@@ -82,8 +123,20 @@ test('seededShuffle is deterministic and order-changing', () => {
 });
 
 test('?date overrides today, and junk falls back to today', () => {
-  assert.equal(puzzleFor(dateFromQuery('?date=2026-12-25')).number, puzzleFor(new Date(2026, 11, 25)).number);
+  assert.equal(
+    puzzleFor(dateFromQuery('?date=2026-12-25'), 'ikon', IKON).number,
+    puzzleFor(new Date(2026, 11, 25), 'ikon', IKON).number,
+  );
   const today = new Date().toDateString();
   assert.equal(dateFromQuery('?date=nonsense').toDateString(), today);
   assert.equal(dateFromQuery('').toDateString(), today);
+});
+
+test('?pool selects the question set and defaults to Ikon', () => {
+  assert.equal(poolFromQuery('?pool=usa').id, 'usa');
+  assert.equal(poolFromQuery('?pool=ikon').id, 'ikon');
+  assert.equal(poolFromQuery('?pool=nonsense').id, 'ikon');
+  assert.equal(poolFromQuery('').id, 'ikon');
+  assert.equal(POOLS.ikon.fineLabel, 'country');
+  assert.equal(POOLS.usa.fineLabel, 'state');
 });

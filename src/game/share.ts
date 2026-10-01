@@ -12,9 +12,14 @@ const BANDS: [number, string][] = [
 export const bandFor = (baseScore: number) =>
   BANDS.find(([min]) => baseScore >= min)?.[1] ?? '⬛';
 
-export function shareText(date: Date, results: readonly RoundResult[], total: number): string {
+export function shareText(
+  date: Date,
+  pool: string,
+  results: readonly RoundResult[],
+  total: number,
+): string {
   const blocks = results.map((r) => `${r.baseScore}${bandFor(r.baseScore)}`).join(' ');
-  return `laptap ${shortPuzzleDate(date)}\n${blocks}\nFinal score: ${total}`;
+  return `laptap ${pool} ${shortPuzzleDate(date)}\n${blocks}\nFinal score: ${total}`;
 }
 
 /**

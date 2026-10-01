@@ -1,16 +1,14 @@
 import './ui/styles.css';
 
-import statesData from './data/states.json' with { type: 'json' };
 import { dateFromQuery, formatPuzzleDate, puzzleFor } from './game/daily.js';
-import type { LatLng, StateCollection } from './game/geo.js';
+import type { LatLng } from './game/geo.js';
+import { poolFromQuery } from './game/pools.js';
 import { copy, shareText } from './game/share.js';
 import { createGame } from './game/state.js';
 import { load, save, streak } from './game/storage.js';
-import { createMap, type Basemap, type GameMap } from './map/map.js';
+import { basemapLabel, createMap, BASEMAP_ORDER, type GameMap } from './map/map.js';
 import { MarkerLayer } from './map/markers.js';
 import { confirmCard, promptCard, resultCard, summaryCard } from './ui/cards.js';
-
-const states = statesData as unknown as StateCollection;
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -22,7 +20,7 @@ const stage = $('stage');
 const scoreValue = $('score-value');
 const title = $('title');
 const basemapToggle = $<HTMLButtonElement>('basemap-toggle');
-const fitUsaButton = $<HTMLButtonElement>('fit-usa');
+const wideButton = $<HTMLButtonElement>('fit-wide');
 
 function render(node: HTMLElement | null): void {
   stage.replaceChildren(...(node ? [node] : []));
@@ -30,32 +28,43 @@ function render(node: HTMLElement | null): void {
 
 const pad3 = (n: number) => String(Math.min(n, 999)).padStart(3, '0');
 
-function main(map: GameMap): void {
+async function main(): Promise<void> {
+  const pool = poolFromQuery(window.location.search);
   const date = dateFromQuery(window.location.search);
-  const puzzle = puzzleFor(date);
-  const game = createGame(puzzle, states);
+
+  const { resorts, boundaries } = await pool.load();
+  const puzzle = puzzleFor(date, pool.id, resorts);
+  const map: GameMap = await createMap($('map'), pool, boundaries);
+
+  const game = createGame(puzzle, boundaries);
   const markers = new MarkerLayer(map);
 
-  title.innerHTML = `laptap #${puzzle.number} <span class="dim">· ${formatPuzzleDate(date)}</span>`;
+  title.innerHTML =
+    `laptap #${puzzle.number} <span class="dim">· ${pool.label} · ${formatPuzzleDate(date)}</span>`;
   document.title = `laptap #${puzzle.number}`;
 
   // --- chrome -------------------------------------------------------------
 
-  const setBasemap = (kind: Basemap) => {
-    map.setBasemap(kind);
-    basemapToggle.textContent = kind === 'relief' ? 'RELIEF' : 'SATELLITE';
-  };
-  basemapToggle.addEventListener('click', () =>
-    setBasemap(map.getBasemap() === 'relief' ? 'satellite' : 'relief'),
-  );
-  fitUsaButton.addEventListener('click', () => map.fitUSA());
+  basemapToggle.textContent = basemapLabel(map.getBasemap());
+  basemapToggle.addEventListener('click', () => {
+    const next =
+      BASEMAP_ORDER[(BASEMAP_ORDER.indexOf(map.getBasemap()) + 1) % BASEMAP_ORDER.length]!;
+    map.setBasemap(next);
+    basemapToggle.textContent = basemapLabel(next);
+  });
+
+  wideButton.textContent = pool.wideLabel;
+  wideButton.addEventListener('click', () => map.fitWide());
 
   // --- persistence --------------------------------------------------------
 
+  // Keyed by pool as well as day, so playing the US set doesn't lock you out
+  // of the Ikon one.
+  const saveKey = `${pool.id}:${puzzle.number}`;
   const persist = () => {
     const { results, total } = game.state;
     save({
-      puzzleNumber: puzzle.number,
+      key: saveKey,
       guesses: results.map((r) => r.guess),
       scores: results.map((r) => r.baseScore),
       total,
@@ -70,13 +79,14 @@ function main(map: GameMap): void {
     if (!resort) return;
     markers.clear();
     map.setLocked(false);
-    map.fitCONUS();
+    map.fitHome();
     render(
       promptCard(
         game.state.roundIndex + 1,
         puzzle.resorts.length,
         game.currentMultiplier(),
         resort.name,
+        `Tap the map where you think this ${pool.noun} is`,
       ),
     );
   }
@@ -95,7 +105,11 @@ function main(map: GameMap): void {
     map.frame([result.guess, result.resort]);
     scoreValue.textContent = pad3(game.state.total);
     persist();
-    render(resultCard(result, game.state.roundIndex === puzzle.resorts.length - 1, () => game.next()));
+    render(
+      resultCard(result, pool, game.state.roundIndex === puzzle.resorts.length - 1, () =>
+        game.next(),
+      ),
+    );
   }
 
   function showSummary(): void {
@@ -104,9 +118,9 @@ function main(map: GameMap): void {
     // Pull back to show every mountain from the run at once.
     map.frame(game.state.results.flatMap((r) => [r.guess, r.resort as LatLng]));
     persist();
-    const played = streak(puzzle.number);
+    const played = streak(pool.id, puzzle.number);
     const card = summaryCard(game.state.results, game.state.total, () =>
-      copy(shareText(date, game.state.results, game.state.total)),
+      copy(shareText(date, pool.label, game.state.results, game.state.total)),
     );
     if (played > 1) {
       const note = card.querySelector('.card-sub');
@@ -139,7 +153,7 @@ function main(map: GameMap): void {
 
   // --- start --------------------------------------------------------------
 
-  const saved = load(puzzle.number);
+  const saved = load(saveKey);
   if (saved?.guesses.length) {
     game.restore(saved.guesses);
   } else {
@@ -147,12 +161,12 @@ function main(map: GameMap): void {
   }
 }
 
-createMap($('map')).then(main).catch((err: unknown) => {
+main().catch((err: unknown) => {
   console.error(err);
   render(
     Object.assign(document.createElement('section'), {
       className: 'card panel',
-      textContent: "The map didn't load. Check your connection and refresh.",
+      textContent: "Something didn't load. Check your connection and refresh.",
     }),
   );
 });

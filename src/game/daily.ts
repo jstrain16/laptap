@@ -1,8 +1,6 @@
+import type { PoolId } from './pools.js';
 import { seededShuffle } from './rng.js';
 import { TIER_COUNT, type Resort } from './resorts.js';
-import resortData from '../data/resorts.json' with { type: 'json' };
-
-export const ALL_RESORTS = resortData as Resort[];
 
 /** Puzzle #1 was this day. Moving it renumbers every puzzle, so don't. */
 const EPOCH = Date.UTC(2026, 9, 1); // 2026-10-01
@@ -25,29 +23,29 @@ export interface Puzzle {
   resorts: Resort[];
 }
 
-const TIERS: Resort[][] = Array.from({ length: TIER_COUNT }, (_, i) =>
-  // Shuffled once per tier with a fixed seed, so walking the list by puzzle
-  // number gives a stable, non-repeating order for every player.
-  seededShuffle(
-    ALL_RESORTS.filter((r) => r.tier === i + 1),
-    `laptap-tier-${i + 1}`,
-  ),
-);
-
 /**
  * The five mountains for a given day, easiest first. Round N comes from tier N,
- * indexed by puzzle number — so a resort cannot come up again until its whole
- * tier has been used (49 days for the smallest tier).
+ * indexed by puzzle number — so a mountain cannot come up again until its whole
+ * tier has been used (16 days for the Ikon pool, 49 for the US one).
+ *
+ * The shuffle is seeded per pool, so everyone playing the same pool on the same
+ * calendar day gets the same five, with no server involved.
  */
-export function puzzleFor(date: Date): Puzzle {
+export function puzzleFor(date: Date, pool: PoolId, resorts: readonly Resort[]): Puzzle {
   const number = dayNumber(date);
-  const resorts = TIERS.map((tier, i) => {
+  const tiers = Array.from({ length: TIER_COUNT }, (_, i) =>
+    seededShuffle(
+      resorts.filter((r) => r.tier === i + 1),
+      `laptap-${pool}-tier-${i + 1}`,
+    ),
+  );
+  const picked = tiers.map((tier, i) => {
     // Offsetting each tier by its index stops all five rounds from advancing in
     // lockstep, which would make consecutive days feel like the same puzzle.
     const idx = (((number + i * 7) % tier.length) + tier.length) % tier.length;
     return tier[idx]!;
   });
-  return { number: number + 1, date, resorts };
+  return { number: number + 1, date, resorts: picked };
 }
 
 /** `?date=YYYY-MM-DD` overrides today, so a day's puzzle can be checked early. */

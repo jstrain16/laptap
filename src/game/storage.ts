@@ -3,7 +3,8 @@ import type { LatLng } from './geo.js';
 const KEY = 'laptap.v1';
 
 export interface StoredGame {
-  puzzleNumber: number;
+  /** "<pool>:<puzzle number>" — each pool keeps its own daily result. */
+  key: string;
   /** One entry per completed round, in order. Enough to rebuild the game. */
   guesses: LatLng[];
   total: number;
@@ -14,7 +15,7 @@ export interface StoredGame {
 
 interface Store {
   current?: StoredGame;
-  history: Record<number, { total: number; scores: number[] }>;
+  history: Record<string, { total: number; scores: number[] }>;
 }
 
 const EMPTY: Store = { history: {} };
@@ -41,25 +42,25 @@ function write(store: Store): void {
   }
 }
 
-export function load(puzzleNumber: number): StoredGame | null {
+export function load(key: string): StoredGame | null {
   const { current } = read();
-  return current?.puzzleNumber === puzzleNumber ? current : null;
+  return current?.key === key ? current : null;
 }
 
 export function save(game: StoredGame): void {
   const store = read();
   store.current = game;
   if (game.finished) {
-    store.history[game.puzzleNumber] = { total: game.total, scores: game.scores };
+    store.history[game.key] = { total: game.total, scores: game.scores };
   }
   write(store);
 }
 
-/** Consecutive days played up to and including this puzzle. */
-export function streak(puzzleNumber: number): number {
+/** Consecutive days of this pool played up to and including this puzzle. */
+export function streak(pool: string, puzzleNumber: number): number {
   const { history } = read();
   let n = 0;
-  for (let p = puzzleNumber; p > 0 && history[p]; p--) n++;
+  for (let p = puzzleNumber; p > 0 && history[`${pool}:${p}`]; p--) n++;
   return n;
 }
 
