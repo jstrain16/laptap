@@ -19,6 +19,8 @@ export interface RunsFile {
   convention: 'north_america' | 'europe' | 'japan';
   /** [west, south, east, north] */
   bounds: [number, number, number, number];
+  /** Compass bearing of "uphill" — what goes at the top of the screen. */
+  bearing: number;
   runs: Run[];
   extra: { d: string; l: Line[] }[];
   lifts: Line[];

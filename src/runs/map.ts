@@ -18,6 +18,13 @@ const SATELLITE =
 const ATTRIBUTION =
   'Terrain &copy; Esri, USGS &middot; runs &amp; lifts &copy; OpenSkiMap, OpenStreetMap contributors';
 
+/**
+ * How far the camera tips back from straight-down. A trail map is a view *at*
+ * the face, not a plan from above; with uphill at the top of the screen this
+ * puts the base wide in the foreground and the summit receding behind it.
+ */
+const PITCH = 50;
+
 const EMPTY = { type: 'FeatureCollection' as const, features: [] };
 
 const lineFeature = (l: Line, props: Record<string, unknown> = {}) => ({
@@ -131,6 +138,8 @@ export async function createRunsMap(container: HTMLElement, mountain: RunsFile):
       [w, s],
       [e, n],
     ],
+    bearing: mountain.bearing,
+    pitch: PITCH,
     minZoom: 9,
     maxZoom: 16.5,
     attributionControl: { compact: true, customAttribution: ATTRIBUTION },
@@ -193,13 +202,37 @@ export async function createRunsMap(container: HTMLElement, mountain: RunsFile):
     return { top: top * vScale, bottom: bottom * vScale, left: side, right: side };
   }
 
+  /**
+   * Frame some bounds while facing the mountain. MapLibre works out the fit as
+   * if looking straight down, and swings back to north-up unless told
+   * otherwise; tipped back at PITCH the same area fills far less of the
+   * screen, so take its answer and move in by ZOOM_IN.
+   */
+  const ZOOM_IN = 0.55;
+  function frame(bounds: maplibregl.LngLatBoundsLike, maxZoom: number, duration: number): void {
+    const cam = map.cameraForBounds(bounds, {
+      bearing: mountain.bearing,
+      padding: padding(),
+      maxZoom,
+    });
+    if (!cam) return;
+    map.easeTo({
+      center: cam.center,
+      zoom: Math.min(maxZoom + ZOOM_IN, (cam.zoom ?? 13) + ZOOM_IN),
+      bearing: mountain.bearing,
+      pitch: PITCH,
+      duration,
+    });
+  }
+
   const fitMountain = (animate = true) =>
-    map.fitBounds(
+    frame(
       [
         [w, s],
         [e, n],
       ],
-      { padding: padding(), duration: animate ? 600 : 0, maxZoom: 15 },
+      15,
+      animate ? 600 : 0,
     );
   fitMountain(false);
 
@@ -242,7 +275,7 @@ export async function createRunsMap(container: HTMLElement, mountain: RunsFile):
       const b = new maplibregl.LngLatBounds();
       b.extend([guess.lng, guess.lat]);
       for (const l of run.l) for (const p of l) b.extend(p);
-      map.fitBounds(b, { padding: padding(), maxZoom: 15.5, duration: 800 });
+      frame(b, 15.5, 800);
     },
     clear() {
       guessPin?.remove();

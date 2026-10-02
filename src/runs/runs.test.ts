@@ -45,6 +45,14 @@ test('both mountains have their real runs, with editor notes stripped', () => {
   }
 });
 
+test('each mountain is turned to face the way its trail map does', () => {
+  // Mount Snow's main face looks east, so its summit is to the west: uphill is
+  // roughly 270°. Alta's base sits on the canyon road to the north and the
+  // lifts climb south: roughly 180°.
+  assert.ok(mountSnow.bearing > 225 && mountSnow.bearing < 315, `Mount Snow: ${mountSnow.bearing}°`);
+  assert.ok(alta.bearing > 135 && alta.bearing < 225, `Alta: ${alta.bearing}°`);
+});
+
 test('distance to a run: on it, beside it, and past its end', () => {
   assert.ok(nearestOnRun({ lat: 45.0, lng: -109.995 }, flat).meters < 0.5);
   const north = nearestOnRun({ lat: 45.0 + 100 / M_PER_DEG_LAT, lng: -109.995 }, flat);

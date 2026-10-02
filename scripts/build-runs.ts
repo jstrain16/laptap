@@ -45,6 +45,12 @@ export interface RunsFile {
   convention: 'north_america' | 'europe' | 'japan';
   /** [west, south, east, north] */
   bounds: [number, number, number, number];
+  /**
+   * Compass bearing of "uphill", in degrees. A trail map is drawn facing the
+   * mountain — base at the bottom, summit at the top — so this is the bearing
+   * the map is rotated to.
+   */
+  bearing: number;
   /** Named runs — the questions. Segments sharing a name are one run. */
   runs: { n: string; d: string; len: number; l: Line[]; area?: true }[];
   /** Unnamed runs, drawn for context but never asked about. */
@@ -125,10 +131,12 @@ async function main() {
     extra: Map<string, Line[]>;
     conv: Map<string, number>;
     lifts: Line[];
+    /** Sum of every run's bottom-to-top vector, in metres east and north. */
+    up: [number, number];
   };
   const acc = new Map<string, Acc>();
   for (const id of targets.keys()) {
-    acc.set(id, { named: new Map(), extra: new Map(), conv: new Map(), lifts: [] });
+    acc.set(id, { named: new Map(), extra: new Map(), conv: new Map(), lifts: [], up: [0, 0] });
   }
 
   // --- runs (streamed) ------------------------------------------------------
@@ -155,6 +163,19 @@ async function main() {
         ? (f.geometry.coordinates as number[][])
         : [];
     if (raw.length < 2) continue;
+
+    // Which way is up for this run: the vector from its lowest point to its
+    // highest. Summed over a whole mountain these give the direction the
+    // slopes climb, with long runs counting for more than short ones.
+    let hi = raw[0]!;
+    let lo = raw[0]!;
+    for (const c of raw) {
+      if ((c[2] ?? 0) > (hi[2] ?? 0)) hi = c;
+      if ((c[2] ?? 0) < (lo[2] ?? 0)) lo = c;
+    }
+    const east = (hi[0]! - lo[0]!) * Math.cos((lo[1]! * Math.PI) / 180) * 111_320;
+    const north = (hi[1]! - lo[1]!) * 110_540;
+
     const geom = simplify(raw);
     const diff = p.difficulty ?? 'unknown';
     const name = askable(p.name);
@@ -162,6 +183,8 @@ async function main() {
     for (const a of p.skiAreas ?? []) {
       const t = acc.get(a.properties?.id ?? '');
       if (!t) continue;
+      t.up[0] += east;
+      t.up[1] += north;
       if (p.difficultyConvention) t.conv.set(p.difficultyConvention, (t.conv.get(p.difficultyConvention) ?? 0) + 1);
       if (name) {
         const e = t.named.get(name) ?? {
@@ -197,6 +220,7 @@ async function main() {
   const top = <K>(m: Map<K, number>) => [...m].sort((a, b) => b[1] - a[1])[0]?.[0];
 
   const index: { id: string; name: string; runs: number }[] = [];
+  const facing: string[] = [];
   const skipped: string[] = [];
   let bytes = 0;
 
@@ -226,6 +250,7 @@ async function main() {
       name,
       convention: conv === 'europe' || conv === 'japan' ? conv : 'north_america',
       bounds: [r5(w), r5(s), r5(e), r5(n)],
+      bearing: Math.round(((Math.atan2(t.up[0], t.up[1]) * 180) / Math.PI + 360) % 360),
       runs,
       extra: [...t.extra].map(([d, l]) => ({ d, l })),
       lifts: t.lifts,
@@ -234,6 +259,7 @@ async function main() {
     writeFileSync(resolve(OUT, `${file.id}.json`), body);
     bytes += body.length;
     index.push({ id: file.id, name, runs: runs.length });
+    facing.push(`${name} climbs towards ${file.bearing}°`);
   }
 
   if (skipped.length) {
@@ -244,6 +270,7 @@ async function main() {
 
   console.log(`
   mountains      ${index.map((m) => `${m.name} (${m.runs} named runs)`).join(', ')}
+  facing         ${facing.join(', ')}
   files          ${(bytes / 1e3).toFixed(0)}KB in public/runs/
 `);
 }

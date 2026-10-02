@@ -163,6 +163,34 @@ body {
   text-decoration: none;
 }
 
+/* A compass needle for the runs map, which is turned to face the mountain.
+   The whole badge rotates, so the arrowhead always points at true north. */
+.north {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  right: var(--gutter);
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.north::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--ink);
+}
+
 /* --- the card stack ----------------------------------------------------- */
 
 .stage {

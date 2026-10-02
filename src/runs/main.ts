@@ -100,6 +100,11 @@ export async function startRuns(): Promise<void> {
   basemapToggle.addEventListener('click', () => {
     basemapToggle.textContent = map.toggleBasemap() === 'terrain' ? 'TERRAIN' : 'SATELLITE';
   });
+  // The map faces the mountain rather than north, so say where north went.
+  const north = el('div', { class: 'north', title: 'North' }, el('span', { text: 'N' }));
+  north.style.transform = `rotate(${-mountain.bearing}deg)`;
+  document.body.append(north);
+
   const fit = $<HTMLButtonElement>('fit-wide');
   fit.textContent = 'FIT';
   fit.addEventListener('click', () => map.fitMountain());
