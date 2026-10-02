@@ -1,4 +1,3 @@
-import type { Pool } from './pools.js';
 import type { RoundResult } from './scoring.js';
 
 /**
@@ -34,6 +33,15 @@ export function playerId(): string {
   }
 }
 
+/** One guess, as stored. `m` is metres, for the runs mode where km rounds to 0. */
+export interface Round {
+  name: string;
+  base: number;
+  km: number;
+  guess: [number, number];
+  m?: number;
+}
+
 export interface PlayEvent {
   player_id: string;
   event: 'start' | 'finish';
@@ -42,7 +50,7 @@ export interface PlayEvent {
   /** Local calendar date, YYYY-MM-DD. */
   puzzle_date: string;
   total: number | null;
-  rounds: { name: string; base: number; km: number; guess: [number, number] }[] | null;
+  rounds: Round[] | null;
   device: 'mobile' | 'desktop';
   /** The player's time zone — a coarse, consent-free proxy for where they are. */
   tz: string;
@@ -67,13 +75,22 @@ function tz(): string {
   }
 }
 
+/** The stored form of the mountain game's results. */
+export const toRounds = (results: readonly RoundResult[]): Round[] =>
+  results.map((r) => ({
+    name: r.resort.name,
+    base: r.baseScore,
+    km: Math.round(r.distanceKm),
+    guess: [Number(r.guess.lat.toFixed(3)), Number(r.guess.lng.toFixed(3))],
+  }));
+
 /** Pure: builds the row for one event. Exported so the shape is testable. */
 export function buildEvent(
   event: PlayEvent['event'],
-  pool: Pool,
+  pool: { id: string },
   puzzle: number,
   date: Date,
-  results?: readonly RoundResult[],
+  rounds?: Round[],
   total?: number,
   ids: { player: string; device: PlayEvent['device']; tz: string } = {
     player: playerId(),
@@ -88,15 +105,7 @@ export function buildEvent(
     puzzle,
     puzzle_date: isoDate(date),
     total: event === 'finish' ? (total ?? 0) : null,
-    rounds:
-      event === 'finish' && results
-        ? results.map((r) => ({
-            name: r.resort.name,
-            base: r.baseScore,
-            km: Math.round(r.distanceKm),
-            guess: [Number(r.guess.lat.toFixed(3)), Number(r.guess.lng.toFixed(3))],
-          }))
-        : null,
+    rounds: event === 'finish' && rounds ? rounds : null,
     device: ids.device,
     tz: ids.tz,
   };
@@ -187,7 +196,7 @@ export interface LeaderboardRow {
 }
 
 /** Today's board for one pool, best score first. Empty if tracking is off. */
-export async function fetchLeaderboard(pool: Pool, date: Date): Promise<LeaderboardRow[]> {
+export async function fetchLeaderboard(pool: { id: string }, date: Date): Promise<LeaderboardRow[]> {
   if (!URL || !KEY) return [];
   try {
     const q = new URLSearchParams({

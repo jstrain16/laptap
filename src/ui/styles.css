@@ -23,6 +23,12 @@
   box-sizing: border-box;
 }
 
+/* An author `display` rule beats the browser's own [hidden] styling, which is
+   how a chip marked hidden ended up on screen anyway. Make hidden mean it. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -144,6 +150,17 @@ body {
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 12px var(--glow);
+}
+
+/* Switches between the mountain game and the runs game; sits under the score. */
+.mode-chip {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 112px);
+  left: var(--gutter);
+  z-index: 5;
+  min-height: 30px;
+  font-size: 10px;
+  text-decoration: none;
 }
 
 /* --- the card stack ----------------------------------------------------- */

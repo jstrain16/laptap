@@ -14,11 +14,12 @@ import {
   fetchLeaderboard,
   playerId,
   savedName,
+  toRounds,
   track,
 } from './game/track.js';
 import { basemapLabel, createMap, BASEMAP_ORDER, type GameMap } from './map/map.js';
 import { MarkerLayer } from './map/markers.js';
-import { confirmCard, promptCard, resultCard, summaryCard } from './ui/cards.js';
+import { confirmCard, promptCard, resultCard, summaryCard, summaryRows } from './ui/cards.js';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -39,6 +40,20 @@ function render(node: HTMLElement | null): void {
 const pad3 = (n: number) => String(Math.min(n, 999)).padStart(3, '0');
 
 async function main(): Promise<void> {
+  // The runs mode is a separate game on the same shell; its code and its
+  // trail maps load only when asked for.
+  const runsMode = new URLSearchParams(window.location.search).get('mode') === 'runs';
+  // The runs game is a test on two mountains, so the main game doesn't link
+  // to it; the chip only appears inside it, as the way back.
+  const modeLink = $<HTMLAnchorElement>('mode-link');
+  modeLink.hidden = !runsMode;
+  modeLink.textContent = 'MOUNTAINS';
+  modeLink.href = './';
+  if (runsMode) {
+    const { startRuns } = await import('./runs/main.js');
+    return startRuns();
+  }
+
   const date = dateFromQuery(window.location.search);
   const pool = poolFromQuery(window.location.search, date);
 
@@ -138,11 +153,13 @@ async function main(): Promise<void> {
     // own score is on it the first time they look. A reload re-enters here
     // through restore(), where the finish was already counted.
     const finish = () =>
-      track(buildEvent('finish', pool, puzzle.number, date, game.state.results, game.state.total));
+      track(
+        buildEvent('finish', pool, puzzle.number, date, toRounds(game.state.results), game.state.total),
+      );
     const finished = restoring ? Promise.resolve() : finish();
     const played = streak(pool.id, puzzle.number);
     const card = summaryCard(
-      game.state.results,
+      summaryRows(game.state.results),
       game.state.total,
       () => copy(shareText(date, pool, game.state.results, game.state.total)),
       trackingEnabled()

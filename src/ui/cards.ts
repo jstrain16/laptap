@@ -273,11 +273,29 @@ function leaderboardSection(hooks: LeaderboardHooks): HTMLElement {
   return section;
 }
 
+/** One line of the summary — both game modes reduce their results to this. */
+export interface SummaryRow {
+  band: string;
+  name: string;
+  dist: string;
+  pts: string;
+}
+
+/** The mountain game's results as summary rows. */
+export const summaryRows = (results: readonly RoundResult[]): SummaryRow[] =>
+  results.map((r) => ({
+    band: bandFor(r.baseScore),
+    name: r.resort.name,
+    dist: miles(r.distanceKm),
+    pts: String(r.score),
+  }));
+
 export function summaryCard(
-  results: readonly RoundResult[],
+  results: readonly SummaryRow[],
   total: number,
   onShare: () => Promise<boolean>,
   leaderboard: LeaderboardHooks | null = null,
+  footer = 'A new set of five mountains at midnight.',
 ): HTMLElement {
   const rows = el(
     'div',
@@ -286,10 +304,10 @@ export function summaryCard(
       el(
         'div',
         { class: 'summary-row' },
-        el('span', { class: 'band', text: bandFor(r.baseScore) }),
-        el('span', { class: 'name', text: r.resort.name }),
-        el('span', { class: 'dist', text: miles(r.distanceKm) }),
-        el('span', { class: 'pts', text: String(r.score) }),
+        el('span', { class: 'band', text: r.band }),
+        el('span', { class: 'name', text: r.name }),
+        el('span', { class: 'dist', text: r.dist }),
+        el('span', { class: 'pts', text: r.pts }),
       ),
     ),
   );
@@ -316,6 +334,6 @@ export function summaryCard(
     ),
     el('div', { class: 'card-actions' }, share),
     leaderboard ? leaderboardSection(leaderboard) : null,
-    el('p', { class: 'card-sub', text: 'A new set of five mountains at midnight.' }),
+    el('p', { class: 'card-sub', text: footer }),
   );
 }

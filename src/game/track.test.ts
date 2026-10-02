@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { COUNTRIES, IKON } from './fixtures.test-util.ts';
 import { POOLS } from './pools.ts';
 import { scoreRound, totalScore } from './scoring.ts';
-import { buildEvent, rankOf, validName } from './track.ts';
+import { buildEvent, rankOf, toRounds, validName } from './track.ts';
 
 const ids = { player: 'p-1', device: 'desktop' as const, tz: 'America/Denver' };
 const date = new Date(2026, 9, 7);
@@ -28,7 +28,7 @@ test('a finish event carries the total and every guess, rounded for storage', ()
   const results = IKON.slice(0, 5).map((r, i) =>
     scoreRound(r, { lat: r.lat + 0.123456, lng: r.lng }, i, COUNTRIES, POOLS.ikon.rungs),
   );
-  const e = buildEvent('finish', POOLS.ikon, 7, date, results, totalScore(results), ids);
+  const e = buildEvent('finish', POOLS.ikon, 7, date, toRounds(results), totalScore(results), ids);
   assert.equal(e.event, 'finish');
   assert.equal(e.total, totalScore(results));
   assert.equal(e.rounds?.length, 5);

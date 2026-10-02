@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "data": "tsx scripts/build-resorts.ts",
-    "test": "tsx --test src/game/*.test.ts"
+    "runs": "tsx scripts/build-runs.ts",
+    "test": "tsx --test src/game/*.test.ts src/runs/*.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^5.6.0"
