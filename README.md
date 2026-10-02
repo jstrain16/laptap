@@ -144,6 +144,24 @@ The schema is in [`supabase/migrations/`](supabase/migrations/). The client is
 [`src/game/track.ts`](src/game/track.ts); with no `VITE_SUPABASE_*` configured it's a no-op, so
 local dev and forks run with analytics off (see `.env.example`).
 
+## Runs mode (a test)
+
+A second game at `?mode=runs`, not linked from the main one: you're given the name and colour of a
+ski run and tap it on the mountain's trail map. Built for two mountains only — Alta and Mount Snow
+(`?mountain=alta`, `?mountain=mountsnow`) — and it records nothing, so test games can't touch the
+real boards.
+
+The trail map is drawn, not borrowed: resort maps are copyrighted paintings with no coordinates
+behind them and the answers printed on them. Runs and lifts come from OpenSkiMap; the mountain
+itself comes from open elevation tiles, which is what lets it be coloured by height (forest at the
+base, snow at the summit), shaded in snowy tones and stood up in real 3D. Runs are white corridors
+with their trail colour down the middle; lifts are red. The view faces the mountain — the build
+works out which way the runs climb and puts that at the top.
+
+A tap is scored against the run's real geometry: within 40m is 100, then a steep decay.
+`npm run runs` rebuilds the data; the `LIVE` list in [`scripts/build-runs.ts`](scripts/build-runs.ts)
+is the only place that says which mountains exist.
+
 ## Layout
 
 ```

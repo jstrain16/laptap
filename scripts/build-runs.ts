@@ -51,6 +51,8 @@ export interface RunsFile {
    * the map is rotated to.
    */
   bearing: number;
+  /** Lowest and highest run elevation in metres — sets the forest-to-snow colour ramp. */
+  elev: [number, number];
   /** Named runs — the questions. Segments sharing a name are one run. */
   runs: { n: string; d: string; len: number; l: Line[]; area?: true }[];
   /** Unnamed runs, drawn for context but never asked about. */
@@ -133,10 +135,11 @@ async function main() {
     lifts: Line[];
     /** Sum of every run's bottom-to-top vector, in metres east and north. */
     up: [number, number];
+    elev: [number, number];
   };
   const acc = new Map<string, Acc>();
   for (const id of targets.keys()) {
-    acc.set(id, { named: new Map(), extra: new Map(), conv: new Map(), lifts: [], up: [0, 0] });
+    acc.set(id, { named: new Map(), extra: new Map(), conv: new Map(), lifts: [], up: [0, 0], elev: [Infinity, -Infinity] });
   }
 
   // --- runs (streamed) ------------------------------------------------------
@@ -185,6 +188,8 @@ async function main() {
       if (!t) continue;
       t.up[0] += east;
       t.up[1] += north;
+      if (lo[2] != null && lo[2] < t.elev[0]) t.elev[0] = lo[2];
+      if (hi[2] != null && hi[2] > t.elev[1]) t.elev[1] = hi[2];
       if (p.difficultyConvention) t.conv.set(p.difficultyConvention, (t.conv.get(p.difficultyConvention) ?? 0) + 1);
       if (name) {
         const e = t.named.get(name) ?? {
@@ -251,6 +256,7 @@ async function main() {
       convention: conv === 'europe' || conv === 'japan' ? conv : 'north_america',
       bounds: [r5(w), r5(s), r5(e), r5(n)],
       bearing: Math.round(((Math.atan2(t.up[0], t.up[1]) * 180) / Math.PI + 360) % 360),
+      elev: [Math.round(t.elev[0]), Math.round(t.elev[1])],
       runs,
       extra: [...t.extra].map(([d, l]) => ({ d, l })),
       lifts: t.lifts,
@@ -259,7 +265,7 @@ async function main() {
     writeFileSync(resolve(OUT, `${file.id}.json`), body);
     bytes += body.length;
     index.push({ id: file.id, name, runs: runs.length });
-    facing.push(`${name} climbs towards ${file.bearing}°`);
+    facing.push(`${name} climbs towards ${file.bearing}°, ${file.elev[0]}–${file.elev[1]}m`);
   }
 
   if (skipped.length) {

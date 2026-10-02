@@ -531,6 +531,15 @@ body {
   box-shadow: 0 0 10px var(--ink);
 }
 
+/* The runs map is bright, so its guess pin is dark with a white ring. */
+.pin-runs {
+  width: 16px;
+  height: 16px;
+  background: #0b1220;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 2px rgba(11, 18, 32, 0.45), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
 .pin-answer {
   background: var(--bad);
   box-shadow: 0 0 10px var(--bad);

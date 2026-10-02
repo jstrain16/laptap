@@ -96,9 +96,9 @@ export async function startRuns(): Promise<void> {
   document.title = `laptap #${number} · ${mountain.name}`;
 
   const basemapToggle = $<HTMLButtonElement>('basemap-toggle');
-  basemapToggle.textContent = 'TERRAIN';
+  basemapToggle.textContent = 'TRAIL MAP';
   basemapToggle.addEventListener('click', () => {
-    basemapToggle.textContent = map.toggleBasemap() === 'terrain' ? 'TERRAIN' : 'SATELLITE';
+    basemapToggle.textContent = map.toggleBasemap() === 'trailmap' ? 'TRAIL MAP' : 'SATELLITE';
   });
   // The map faces the mountain rather than north, so say where north went.
   const north = el('div', { class: 'north', title: 'North' }, el('span', { text: 'N' }));

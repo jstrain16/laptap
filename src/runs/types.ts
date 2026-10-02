@@ -21,6 +21,8 @@ export interface RunsFile {
   bounds: [number, number, number, number];
   /** Compass bearing of "uphill" — what goes at the top of the screen. */
   bearing: number;
+  /** Lowest and highest run elevation, in metres. */
+  elev: [number, number];
   runs: Run[];
   extra: { d: string; l: Line[] }[];
   lifts: Line[];
