@@ -345,6 +345,16 @@ body {
   color: var(--warn);
 }
 
+/* One line about the place, under the verdict. Quieter than the snark. */
+.result-fact {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(127, 231, 255, 0.25);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
 /* --- summary ------------------------------------------------------------ */
 
 .summary-rows {
@@ -545,6 +555,44 @@ body {
   box-shadow: 0 0 10px var(--bad);
 }
 
+/* The end-of-game fact bubble, floating above its mountain. */
+.fact {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 210px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 0 10px var(--glow);
+  text-align: left;
+}
+
+.fact strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--bad);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fact::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 8px;
+  background: var(--edge);
+}
+
 .pin-label {
   position: absolute;
   left: 50%;
@@ -623,6 +671,10 @@ body {
      directly below already names the mountain. */
   .pin-label {
     display: none;
+  }
+  .fact {
+    max-width: 170px;
+    font-size: 10px;
   }
   .summary-row .dist {
     display: none;

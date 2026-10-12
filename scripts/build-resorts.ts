@@ -24,6 +24,7 @@ import {
   haversineKm,
   type BoundaryCollection,
   type BoundaryFeature,
+  type LatLng,
 } from '../src/game/geo.ts';
 import { regionForState } from '../src/game/regions.ts';
 import type { Resort } from '../src/game/resorts.ts';
@@ -42,6 +43,14 @@ const LIFTS_SOURCE = 'https://tiles.openskimap.org/geojson/lifts.geojson';
  * further than this from the area's own geometry means a mis-linked lift.
  */
 const PEAK_MAX_KM = 12;
+
+/**
+ * A tap anywhere on the mountain is a bullseye. "The mountain" is the span of
+ * the area's lift network measured from the pin, plus this much for the base
+ * village and the car park — the town is part of the resort, and a player who
+ * taps Park City's main street has found Park City.
+ */
+const VILLAGE_KM = 1.6;
 const COUNTRIES_SOURCE =
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson';
 
@@ -224,31 +233,65 @@ export interface Peak {
   ele: number;
 }
 
+/** What the lifts dump says about one ski area. */
+export interface LiftNetwork {
+  peak: Peak;
+  /** Every lift station (both ends of every lift), as [lat, lng]. */
+  stations: LatLng[];
+}
+
 /**
- * The highest point reachable by lift in each ski area, from OpenSkiMap's
- * lifts dump: every lift is a 3D line, so its top station is simply its
- * highest coordinate, and the area's peak is the highest of those.
+ * The lift network of each ski area, from OpenSkiMap's lifts dump: every lift
+ * is a 3D line, so its top station is simply its highest coordinate, the
+ * area's peak is the highest of those, and the stations together trace how far
+ * the mountain extends.
  */
-async function loadPeaks(): Promise<Map<string, Peak>> {
+async function loadLifts(): Promise<Map<string, LiftNetwork>> {
   const raw = JSON.parse(await cached(LIFTS_SOURCE, 'lifts.geojson', 'OpenSkiMap lifts')) as {
     features: LiftFeature[];
   };
-  const peaks = new Map<string, Peak>();
+  const networks = new Map<string, LiftNetwork>();
   for (const lift of raw.features) {
-    if (lift.geometry.type !== 'LineString' || lift.properties.status === 'abandoned') continue;
+    // Only lifts you can ride: the dump also carries abandoned, planned and
+    // under-construction ones, and a proposed Vail chair once became its summit.
+    if (lift.geometry.type !== 'LineString' || lift.properties.status !== 'operating') continue;
+    const coords = lift.geometry.coordinates;
     let top: number[] | null = null;
-    for (const c of lift.geometry.coordinates) {
+    for (const c of coords) {
       if (c.length >= 3 && (top === null || c[2]! > top[2]!)) top = c;
     }
     if (!top) continue;
+    const ends = [coords[0], coords[coords.length - 1]]
+      .filter((c): c is number[] => !!c)
+      .map((c) => ({ lat: c[1]!, lng: c[0]! }));
     for (const area of lift.properties.skiAreas ?? []) {
       const id = area.properties?.id;
       if (!id) continue;
-      const cur = peaks.get(id);
-      if (!cur || top[2]! > cur.ele) peaks.set(id, { lng: top[0]!, lat: top[1]!, ele: top[2]! });
+      const peak = { lng: top[0]!, lat: top[1]!, ele: top[2]! };
+      const cur = networks.get(id);
+      if (!cur) networks.set(id, { peak, stations: ends });
+      else {
+        if (peak.ele > cur.peak.ele) cur.peak = peak;
+        cur.stations.push(...ends);
+      }
     }
   }
-  return peaks;
+  return networks;
+}
+
+/**
+ * How far "on the mountain" extends from the pin: the furthest lift station
+ * still plausibly part of this area, plus the village. Stations beyond
+ * PEAK_MAX_KM are a lift mis-linked to the wrong area and are ignored, and an
+ * area with no lift data gets the village radius alone.
+ */
+function reachKm(pin: LatLng, network: LiftNetwork | undefined): number {
+  let span = 0;
+  for (const st of network?.stations ?? []) {
+    const km = haversineKm(pin, st);
+    if (km <= PEAK_MAX_KM) span = Math.max(span, km);
+  }
+  return round(span + VILLAGE_KM, 1);
 }
 
 // --- boundaries -------------------------------------------------------------
@@ -352,7 +395,7 @@ type Candidate = Omit<Resort, 'tier' | 'fine' | 'coarse' | 'region'> & {
 
 function toCandidate(
   f: SkiAreaFeature,
-  peaks: Map<string, Peak>,
+  lifts: Map<string, LiftNetwork>,
   world: BoundaryCollection,
 ): Candidate | null {
   const coords = centroid(f.geometry);
@@ -367,7 +410,8 @@ function toCandidate(
   // resort whose top lift ends on the frontier — Grandvalira's highest station
   // sits on the Andorra–France ridge — so keep the base rather than relabel
   // the whole destination.
-  const peak = peaks.get(f.properties.id);
+  const network = lifts.get(f.properties.id);
+  const peak = network?.peak;
   const base = { lat: coords[1]!, lng: coords[0]! };
   const usePeak =
     !!peak &&
@@ -381,6 +425,7 @@ function toCandidate(
     place: placeLabel(place),
     lat: round(pin.lat, 5),
     lng: round(pin.lng, 5),
+    reachKm: reachKm(pin, network),
     atPeak: usePeak,
     lifts: liftCount(f.properties.statistics),
     verticalM: verticalM(f.properties.statistics),
@@ -441,6 +486,12 @@ function cutsFor(total: number, sizes: readonly number[]): number[] {
   }
   let acc = 0;
   return sizes.map((n) => (acc += n) / total);
+}
+
+/** "min 1.6 · median 4.2 · max 13.1" — how wide the bullseyes came out. */
+function reachReport(pool: Resort[]): string {
+  const r = pool.map((x) => x.reachKm).sort((a, b) => a - b);
+  return `min ${r[0]} · median ${r[Math.floor(r.length / 2)]} · max ${r[r.length - 1]}`;
 }
 
 function fail(msg: string): never {
@@ -504,8 +555,8 @@ async function main() {
   console.log(`source: ${src.features.length} ski areas worldwide\n`);
 
   const byId = new Map(src.features.map((f) => [f.properties.id, f] as const));
-  const peaks = await loadPeaks();
-  console.log(`peaks: lift-served summits for ${peaks.size} ski areas\n`);
+  const lifts = await loadLifts();
+  console.log(`lifts: networks for ${lifts.size} ski areas\n`);
 
   // --- pass pools ----------------------------------------------------------
 
@@ -536,7 +587,7 @@ async function main() {
       }
       seen.add(f.properties.id);
 
-      const c = toCandidate(f, peaks, countries);
+      const c = toCandidate(f, lifts, countries);
       if (!c) fail(`${label}: "${dest.name}" has no usable geometry`);
 
       if (dest.at) {
@@ -555,6 +606,8 @@ async function main() {
           name: dest.name,
           lat: dest.at[0],
           lng: dest.at[1],
+          reachKm: reachKm({ lat: dest.at[0], lng: dest.at[1] }, lifts.get(f.properties.id)),
+          ...(dest.fact ? { fact: dest.fact } : {}),
           atPeak: true,
           country: hit.name,
           place: hit.name,
@@ -573,7 +626,7 @@ async function main() {
       // The list's own name wins over OpenSkiMap's — the player is being asked
       // to find "Jackson Hole", not an OSM object.
       if (c.atPeak) peakCount.n++;
-      cands.push({ ...c, name: dest.name });
+      cands.push({ ...c, name: dest.name, ...(dest.fact ? { fact: dest.fact } : {}) });
     }
 
     // Tier sizes are chosen so no two tiers realign within MIN_PAIR_DAYS; see
@@ -618,7 +671,7 @@ async function main() {
   for (const f of usaPool.sort(
     (a, b) => fameScore(b) - fameScore(a) || a.properties.id.localeCompare(b.properties.id),
   )) {
-    const c = toCandidate(f, peaks, countries);
+    const c = toCandidate(f, lifts, countries);
     if (!c || !c.region || !regionForState(c.region)) continue;
     // A few areas appear as two OSM objects a couple hundred metres apart.
     // They share a name and their statistics, so keep whichever ranked higher.
@@ -692,6 +745,8 @@ async function main() {
   console.log(`
   files          ikon ${size('resorts-ikon.json')}  epic ${size('resorts-epic.json')}  usa ${size('resorts-usa.json')}  countries ${size('countries.json')}  states ${size('states.json')}
   summits        ikon ${ikonPeaks}/${ikon.length}  epic ${epicPeaks}/${epic.length}  usa ${usaPeaks}/${usa.length}
+  reach (km)     ikon ${reachReport(ikon)}  epic ${reachReport(epic)}  usa ${reachReport(usa)}
+  facts          ikon ${ikon.filter((r) => r.fact).length}/${ikon.length}  epic ${epic.filter((r) => r.fact).length}/${epic.length}
   ikon spread    ${new Set(ikon.map((r) => r.fine)).size} countries, ${new Set(ikon.map((r) => r.coarse)).size} continents, ${ikon.filter((r) => r.region).length} with a state rung
   epic spread    ${new Set(epic.map((r) => r.fine)).size} countries, ${new Set(epic.map((r) => r.coarse)).size} continents, ${epic.filter((r) => r.region).length} with a state rung
   epic tier 1    ${epic.filter((r) => r.tier === 1).slice(0, 5).map((r) => r.name).join(', ')}

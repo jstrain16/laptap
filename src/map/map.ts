@@ -47,6 +47,16 @@ const MAX_ZOOM = 11;
 const SECONDS_PER_REVOLUTION = 120;
 
 /**
+ * The end-of-game tour: the globe eases from mountain to mountain so each
+ * fact can be read, and a drag takes over. A continent fills the screen at
+ * this zoom, which is close enough to read a bubble and far enough to see
+ * where on the planet you were sent.
+ */
+const TOUR_ZOOM = 3.2;
+const TOUR_EASE_MS = 2400;
+const TOUR_HOLD_MS = 3600;
+
+/**
  * Width of the rendered globe in CSS pixels at zoom 0 — measured at two very
  * different viewport sizes, because MapLibre exposes no way to ask and the
  * value turns out to depend only on zoom. It doubles with each zoom level,
@@ -67,6 +77,8 @@ export interface GameMap {
   frame(points: LatLng[]): void;
   startSpin(): void;
   stopSpin(): void;
+  /** Visits each point in turn, looping, until the player touches the globe. */
+  tour(points: LatLng[]): void;
 }
 
 export async function createMap(container: HTMLElement, pool: Pool): Promise<GameMap> {
@@ -74,6 +86,7 @@ export async function createMap(container: HTMLElement, pool: Pool): Promise<Gam
   let locked = false;
   let pickHandler: ((point: LatLng) => void) | null = null;
   let spinning = false;
+  let tourTimer = 0;
 
   const map = new maplibregl.Map({
     container,
@@ -171,7 +184,13 @@ export async function createMap(container: HTMLElement, pool: Pool): Promise<Gam
   for (const event of ['mousedown', 'touchstart', 'wheel'] as const) {
     map.on(event, () => {
       spinning = false;
+      stopTour();
     });
+  }
+
+  function stopTour(): void {
+    window.clearTimeout(tourTimer);
+    tourTimer = 0;
   }
 
   // The crosshair cursor is the whole affordance — it says "tap the map".
@@ -260,6 +279,16 @@ export async function createMap(container: HTMLElement, pool: Pool): Promise<Gam
     return Math.max(0, Math.min(4, Math.log2(diameter / GLOBE_DIAMETER_AT_Z0)));
   }
 
+  /**
+   * Pixels to shift a centred point up by, so it sits in the middle of the
+   * band the cards leave visible rather than behind them. An `offset` rather
+   * than `padding`, because easeTo's padding sticks to the camera afterwards.
+   */
+  function visibleOffset(): [number, number] {
+    const pad = visiblePadding();
+    return [0, (pad.top - pad.bottom) / 2];
+  }
+
   function goHome(duration: number): void {
     if (pool.home.kind === 'globe') {
       map.easeTo({ center: map.getCenter(), zoom: globeZoom(), duration });
@@ -291,6 +320,7 @@ export async function createMap(container: HTMLElement, pool: Pool): Promise<Gam
       applyCursor();
     },
     startSpin() {
+      stopTour();
       if (spinning) return;
       spinning = true;
       // Starting a rotation step now would cancel an in-flight camera move —
@@ -301,11 +331,31 @@ export async function createMap(container: HTMLElement, pool: Pool): Promise<Gam
     },
     stopSpin() {
       spinning = false;
+      stopTour();
     },
     fitHome(animate = true) {
+      stopTour();
       goHome(animate ? 600 : 0);
     },
+    tour(points) {
+      stopTour();
+      spinning = false;
+      if (points.length === 0) return;
+      let i = 0;
+      const visit = () => {
+        const p = points[i++ % points.length]!;
+        map.easeTo({
+          center: [p.lng, p.lat],
+          zoom: TOUR_ZOOM,
+          offset: visibleOffset(),
+          duration: TOUR_EASE_MS,
+        });
+        tourTimer = window.setTimeout(visit, TOUR_EASE_MS + TOUR_HOLD_MS);
+      };
+      visit();
+    },
     frame(points) {
+      stopTour();
       if (points.length === 0) return;
       const bounds = new maplibregl.LngLatBounds();
       for (const p of points) bounds.extend([p.lng, p.lat]);

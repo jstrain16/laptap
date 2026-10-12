@@ -1,6 +1,7 @@
 import maplibregl, { type Marker } from 'maplibre-gl';
 
 import type { LatLng } from '../game/geo.js';
+import type { Resort } from '../game/resorts.js';
 import type { GameMap } from './map.js';
 
 const LINE_SOURCE = 'guess-line';
@@ -25,6 +26,7 @@ function pin(className: string, label?: string): HTMLElement {
 export class MarkerLayer {
   private guess: Marker | null = null;
   private answer: Marker | null = null;
+  private facts: Marker[] = [];
 
   constructor(private readonly map: GameMap) {
     const raw = map.raw;
@@ -79,9 +81,39 @@ export class MarkerLayer {
     });
   }
 
+  /**
+   * The end-of-game globe: a pin on each of the day's mountains with its fun
+   * fact floating above it. Facts are the reward for finishing, so they are
+   * always open rather than hidden behind a tap; on a globe the ones on the
+   * far side disappear with it, which is what makes spinning it worthwhile.
+   */
+  showFacts(resorts: readonly Resort[]): void {
+    for (const r of resorts) {
+      const node = pin('pin-answer');
+      const bubble = document.createElement('div');
+      bubble.className = 'fact';
+      const name = document.createElement('strong');
+      name.textContent = r.name;
+      bubble.append(name);
+      if (r.fact) {
+        const text = document.createElement('span');
+        text.textContent = r.fact;
+        bubble.append(text);
+      }
+      node.append(bubble);
+      this.facts.push(
+        new maplibregl.Marker({ element: node, anchor: 'bottom' })
+          .setLngLat([r.lng, r.lat])
+          .addTo(this.map.raw),
+      );
+    }
+  }
+
   clear(): void {
     this.guess?.remove();
     this.answer?.remove();
+    for (const m of this.facts) m.remove();
+    this.facts = [];
     this.guess = null;
     this.answer = null;
     const src = this.map.raw.getSource(LINE_SOURCE) as maplibregl.GeoJSONSource | undefined;

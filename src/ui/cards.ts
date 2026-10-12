@@ -37,7 +37,11 @@ const pick = (lines: string[]) => lines[Math.floor(Math.random() * lines.length)
 function snarkFor(result: RoundResult): string {
   // Below ~50km the distance bands say it better; above, a rung that fired
   // sets the tone so the line never contradicts the breakdown beneath it.
-  const finest = result.earned[0];
+  // Only a rung earned by place counts here: a tap in Germany 60 miles from
+  // Zillertal earns Austria's state rung by closeness, but it did not "find"
+  // Tyrol.
+  if (result.bullseye) return pick(SNARK[0]![1]);
+  const finest = result.earned.find((e) => e.name);
   if (finest && result.distanceKm > 50) {
     const { label } = finest;
     return pick([
@@ -100,7 +104,14 @@ export function resultCard(result: RoundResult, isLast: boolean, onNext: () => v
       text: `${bandFor(result.baseScore)}  ${result.resort.place.toUpperCase()}`,
     }),
     el('h2', { class: 'card-title', text: result.resort.name }),
-    el('p', { class: 'result-line', text: `${miles(result.distanceKm)} away` }),
+    el('p', {
+      class: 'result-line',
+      // Pins are summits, so on the mountain the distance is to the peak, and
+      // saying so stops "6 mi away" looking like a miss next to a 100.
+      text: result.bullseye
+        ? `On the mountain · ${miles(result.distanceKm)} from the peak`
+        : `${miles(result.distanceKm)} away`,
+    }),
     el(
       'p',
       { class: 'result-line' },
@@ -111,6 +122,7 @@ export function resultCard(result: RoundResult, isLast: boolean, onNext: () => v
     ),
     el('p', { class: 'result-line result-floor', text: how }),
     el('p', { class: 'result-snark', text: snarkFor(result) }),
+    result.resort.fact ? el('p', { class: 'result-fact', text: result.resort.fact }) : null,
     el('div', { class: 'card-actions' }, next),
   );
 }

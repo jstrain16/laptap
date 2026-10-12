@@ -2,17 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { puzzleFor } from './daily.ts';
-import { COUNTRIES, IKON, STATES, USA, byName } from './fixtures.test-util.ts';
+import { COUNTRIES, EPIC, IKON, STATES, USA, byName } from './fixtures.test-util.ts';
 import { POOLS } from './pools.ts';
+import { KM_PER_MILE } from './geo.ts';
 import {
   BULLSEYE_KM,
   BULLSEYE_MILES,
+  CLOSE_MILES,
+  CLOSE_POINTS,
   MAX_SCORE,
   MULTIPLIERS,
+  NEAR_MILES,
+  NEAR_POINTS,
   PROXIMITY_FAR_KM,
   PROXIMITY_POINTS,
   breakdown,
   proximityPoints,
+  reachKm,
   scoreRound,
   totalScore,
 } from './scoring.ts';
@@ -21,6 +27,13 @@ const alta = byName(USA, 'Alta Ski Area');
 const niseko = byName(IKON, 'Niseko United');
 const snowbird = byName(IKON, 'Snowbird');
 const palisades = byName(IKON, 'Palisades Tahoe');
+const parkCity = byName(EPIC, 'Park City');
+
+/** A point `km` due east of a resort's pin. */
+const east = (r: { lat: number; lng: number }, km: number) => ({
+  lat: r.lat,
+  lng: r.lng + km / (111.32 * Math.cos((r.lat * Math.PI) / 180)),
+});
 
 const ikonRung = (label: string) => POOLS.ikon.rungs.find((r) => r.label === label)!.points;
 const ikonGeoMax = POOLS.ikon.rungs.reduce((a, r) => a + r.points, 0);
@@ -28,24 +41,51 @@ const earnedLabels = (r: ReturnType<typeof scoreRound>) => r.earned.map((e) => e
 
 // --- closeness ---------------------------------------------------------------
 
-test('anything inside the three-mile bullseye scores a full 100', () => {
-  assert.equal(BULLSEYE_MILES, 3);
-  for (const km of [0, BULLSEYE_KM * 0.5, BULLSEYE_KM]) {
-    const r = scoreRound(snowbird, { lat: snowbird.lat, lng: snowbird.lng + km / 85 }, 0, COUNTRIES, POOLS.ikon.rungs);
-    assert.ok(r.distanceKm <= BULLSEYE_KM + 0.01);
-    assert.equal(r.baseScore, 100);
+test('anywhere on the mountain scores a full 100', () => {
+  // Park City's lift network runs the whole ridge to the Canyons side; tapping
+  // the wrong peak is still Park City.
+  assert.ok(reachKm(parkCity) > 9, `Park City reach ${reachKm(parkCity)}km`);
+  for (const km of [0, reachKm(parkCity) * 0.5, reachKm(parkCity) - 0.05]) {
+    const r = scoreRound(parkCity, east(parkCity, km), 0, COUNTRIES, POOLS.epic.rungs);
+    assert.equal(r.baseScore, 100, `${km}km from the pin`);
     assert.ok(r.bullseye);
-    assert.equal(breakdown(r), 'bullseye');
+    assert.equal(r.beyondKm, 0);
+    assert.equal(breakdown(r), 'on the mountain');
   }
+  // And a tap a kilometre past the edge is no longer one — though it barely costs.
+  const r = scoreRound(parkCity, east(parkCity, reachKm(parkCity) + 1), 0, COUNTRIES, POOLS.epic.rungs);
+  assert.ok(!r.bullseye);
+  assert.ok(r.beyondKm > 0.9 && r.beyondKm < 1.1, `beyond ${r.beyondKm}km`);
+  assert.equal(r.baseScore, 99);
 });
 
-test('closeness points fall on a log scale and never quite reach zero before the far side', () => {
+test('every resort gets at least the three-mile bullseye, and a reach that fits one mountain', () => {
+  assert.equal(BULLSEYE_MILES, 3);
+  for (const r of [...IKON, ...EPIC, ...USA]) {
+    assert.ok(reachKm(r) >= BULLSEYE_KM, `${r.name} reach ${reachKm(r)}`);
+    assert.ok(reachKm(r) <= 14, `${r.name} reach ${reachKm(r)}km is not one mountain`);
+  }
+  // A one-lift hill still gets the floor.
+  const smallest = USA.reduce((a, b) => (a.reachKm < b.reachKm ? a : b));
+  assert.ok(smallest.reachKm < BULLSEYE_KM);
+  const r = scoreRound(smallest, east(smallest, BULLSEYE_KM - 0.05), 0, STATES, POOLS.usa.rungs);
+  assert.equal(r.baseScore, 100);
+});
+
+test('the first ten miles past the edge are gentle, then closeness falls on a log scale', () => {
+  const near = NEAR_MILES * KM_PER_MILE;
+  const close = CLOSE_MILES * KM_PER_MILE;
   assert.equal(proximityPoints(0), PROXIMITY_POINTS);
-  assert.equal(proximityPoints(BULLSEYE_KM), PROXIMITY_POINTS);
+  assert.equal(proximityPoints(near), NEAR_POINTS);
+  assert.equal(proximityPoints(close), CLOSE_POINTS);
+  // With every rung earned: 95 at five miles, 92 at ten.
+  const geo = ikonGeoMax;
+  assert.equal(geo + NEAR_POINTS, 95);
+  assert.equal(geo + CLOSE_POINTS, 92);
   let prev = Infinity;
-  for (const km of [BULLSEYE_KM, 10, 50, 100, 500, 1000, 5000, 10000]) {
+  for (const km of [0, 1, near, 10, close, 50, 100, 500, 1000, 5000, 10000]) {
     const p = proximityPoints(km);
-    assert.ok(p < prev, `${km}km should score below ${prev}`);
+    assert.ok(p <= prev, `${km}km should not score above ${prev}`);
     assert.ok(p > 0, `${km}km should still be worth something`);
     prev = p;
   }
@@ -53,6 +93,16 @@ test('closeness points fall on a log scale and never quite reach zero before the
   // One order of magnitude of distance costs about the same at every scale.
   const step = (a: number, b: number) => proximityPoints(a) - proximityPoints(b);
   assert.ok(Math.abs(step(30, 300) - step(300, 3000)) < 0.5);
+});
+
+test('scoring reads the gentle curve from the edge of the mountain, not the pin', () => {
+  const edge = reachKm(snowbird);
+  const at = (miles: number) =>
+    scoreRound(snowbird, east(snowbird, edge + miles * KM_PER_MILE), 0, COUNTRIES, POOLS.ikon.rungs);
+  assert.equal(at(5).baseScore, 95);
+  assert.equal(at(10).baseScore, 92);
+  assert.ok(at(30).baseScore >= 88, `30 miles out: ${at(30).baseScore}`);
+  assert.ok(at(100).baseScore >= 85, `100 miles out: ${at(100).baseScore}`);
 });
 
 test('multipliers sum to 10 so a perfect game is exactly 1000', () => {
@@ -99,7 +149,7 @@ test('right continent alone earns the continent rung plus closeness', () => {
   assert.equal(r.guessFine, 'Mongolia');
   assert.deepEqual(earnedLabels(r), ['continent']);
   assert.equal(r.baseScore, ikonRung('continent') + r.proximity);
-  assert.ok(r.baseScore >= 40, `continent-only should be worth 40ish, got ${r.baseScore}`);
+  assert.ok(r.baseScore >= 38, `continent-only should be worth 40ish, got ${r.baseScore}`);
 });
 
 test('wrong continent earns only closeness, and that is nearly nothing', () => {

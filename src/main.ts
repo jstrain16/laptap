@@ -146,8 +146,12 @@ async function main(): Promise<void> {
     markers.clear();
     map.stopSpin();
     map.setLocked(true);
-    // Pull back to show every mountain from the run at once.
-    map.frame(game.state.results.flatMap((r) => [r.guess, r.resort as LatLng]));
+    // Each mountain gets its fun fact floating above it, and the globe tours
+    // them in order — five resorts can span the planet, and framing them all
+    // leaves every one on the horizon. A drag takes over from the tour.
+    const answers = game.state.results.map((r) => r.resort);
+    markers.showFacts(answers);
+    map.tour(answers as LatLng[]);
     persist();
     // Wait for the finish to land before the board is fetched, so the player's
     // own score is on it the first time they look. A reload re-enters here

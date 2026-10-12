@@ -23,7 +23,13 @@ forces any of the three. Each pool keeps its own daily result and streak.
 
 **Every pin is the mountain's summit**, not its town: the top station of the area's highest lift,
 taken from OpenSkiMap's lifts data. Vail is Blue Sky Basin at 3,526m, not Vail Village; Zermatt is
-the Gornergrat, not the resort below it. The 3-mile bullseye is drawn around that point.
+the Gornergrat, not the resort below it. Each resort also carries a **reach** — how far its lift
+network extends from that pin, plus a mile for the base village — and a tap anywhere inside it is
+a bullseye. Park City's reach runs the whole ridge to the Canyons side; the wrong peak is still
+Park City.
+
+Every destination has a **one-line fun fact**, shown on the result card and floating above each
+mountain on the globe at the end of the game. They live beside the names in the destination lists.
 
 ## Difficulty
 
@@ -53,16 +59,21 @@ also earned by landing within about 100 miles (300 for the continent), so a tap 
 state line or a national border isn't punished, and destinations in countries without state
 polygons can still reach the same maximum.
 
-Closeness runs on a **log scale**, because that's how distance feels: 30 miles off versus 300 is
-one step, 300 versus 3,000 another. It only reaches zero on the far side of the planet. Anything
-within **3 miles** is a bullseye and scores a flat 100.
+Closeness is measured from the **edge of the mountain** (its reach, never less than 3 miles from
+the pin), and is gentle at first: anywhere on the mountain is a flat 100, five miles past the edge
+is 95, ten miles is 92. Beyond that it runs on a **log scale**, because that's how distance feels:
+30 miles off versus 300 is one step, 300 versus 3,000 another. It only reaches zero on the far
+side of the planet.
 
 | global pool | base score |
 |---|---|
-| right state, 20 miles off | ~94 |
-| right country, wrong state, 300 miles off | ~66 |
-| right continent only, 1,000 miles off | ~43 |
-| wrong continent, 5,000 miles off | ~3 |
+| anywhere on the mountain | 100 |
+| 5 miles past the edge | 95 |
+| 10 miles | 92 |
+| right state, 100 miles off | ~87 |
+| right country, wrong state, 300 miles off | ~64 |
+| right continent only, 1,500 miles off | ~40 |
+| wrong continent, 5,000 miles off | ~2 |
 
 A tap that lands in the sea or a lake snaps to the nearest land within about two degrees, so the
 Great Lakes count as North America and the Ligurian Sea as Europe.
@@ -186,7 +197,8 @@ npm run build
 ## Tweaking it
 
 - **Which mountains, and in what order** — [`scripts/ikon-destinations.ts`](scripts/ikon-destinations.ts), then `npm run data`.
-- **Difficulty curve** — `DECAY_KM` in [`src/game/scoring.ts`](src/game/scoring.ts).
+- **Fun facts** — the `fact` on each entry in the destination lists, then `npm run data`.
+- **Forgiveness** — the closeness constants at the top of [`src/game/scoring.ts`](src/game/scoring.ts); the village radius (`VILLAGE_KM`) in the ETL.
 - **Snark** — the `SNARK` table in [`src/ui/cards.ts`](src/ui/cards.ts).
 - **Colours** — custom properties on `:root` in [`src/ui/styles.css`](src/ui/styles.css).
 - **A new pool** — add an entry to [`src/game/pools.ts`](src/game/pools.ts) and a builder in the ETL.
