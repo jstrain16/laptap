@@ -176,7 +176,7 @@ export async function startRuns(): Promise<void> {
       link,
     ].join('\n');
 
-    const played = streak(POOL.id, number);
+    const played = streak([POOL.id], number);
     const card = summaryCard(
       results.map((r) => ({
         band: bandFor(r.baseScore),

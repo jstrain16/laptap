@@ -270,9 +270,18 @@ body {
 
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
   margin-top: 12px;
+}
+
+/* A link styled as a button — the other pass's five, from the summary. */
+a.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn {

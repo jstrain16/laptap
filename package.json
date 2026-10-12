@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "data": "tsx scripts/build-resorts.ts",
     "runs": "tsx scripts/build-runs.ts",
-    "test": "tsx --test src/game/*.test.ts src/runs/*.test.ts"
+    "test": "tsx --test src/game/*.test.ts src/runs/*.test.ts src/ui/*.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^5.6.0"

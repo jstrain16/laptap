@@ -59,12 +59,23 @@ export function save(game: StoredGame): void {
   write(store);
 }
 
-/** Consecutive days of this pool played up to and including this puzzle. */
-export function streak(pool: string, puzzleNumber: number): number {
+/**
+ * Consecutive days played, up to and including this puzzle. A day counts if
+ * any of the given pools was finished that day: the pass pools alternate by
+ * day, so a daily player's Ikon streak would otherwise break every other
+ * morning. Each game mode passes the pools that make up its daily habit.
+ */
+export function streak(pools: readonly string[], puzzleNumber: number): number {
   const { history } = read();
+  const played = (p: number) => pools.some((pool) => history[`${pool}:${p}`]);
   let n = 0;
-  for (let p = puzzleNumber; p > 0 && history[`${pool}:${p}`]; p--) n++;
+  for (let p = puzzleNumber; p > 0 && played(p); p--) n++;
   return n;
+}
+
+/** The finished total for a day's game in a pool, or null if it wasn't finished. */
+export function finishedTotal(key: string): number | null {
+  return read().history[key]?.total ?? null;
 }
 
 export const playedCount = () => Object.keys(read().history).length;

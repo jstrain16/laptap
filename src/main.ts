@@ -2,10 +2,10 @@ import './ui/styles.css';
 
 import { dateFromQuery, formatPuzzleDate, puzzleFor } from './game/daily.js';
 import type { LatLng } from './game/geo.js';
-import { poolFromQuery } from './game/pools.js';
+import { POOLS, poolFromQuery } from './game/pools.js';
 import { copy, shareText } from './game/share.js';
 import { createGame } from './game/state.js';
-import { load, save, streak } from './game/storage.js';
+import { finishedTotal, load, save, streak } from './game/storage.js';
 import {
   buildEvent,
   claimName,
@@ -20,6 +20,8 @@ import {
 import { basemapLabel, createMap, BASEMAP_ORDER, type GameMap } from './map/map.js';
 import { MarkerLayer } from './map/markers.js';
 import { confirmCard, promptCard, resultCard, summaryCard, summaryRows } from './ui/cards.js';
+import { countdownLine } from './ui/countdown.js';
+import { el } from './ui/dom.js';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -161,7 +163,9 @@ async function main(): Promise<void> {
         buildEvent('finish', pool, puzzle.number, date, toRounds(game.state.results), game.state.total),
       );
     const finished = restoring ? Promise.resolve() : finish();
-    const played = streak(pool.id, puzzle.number);
+    // Any of the mountain pools counts towards the daily streak: the pass
+    // pools alternate by day, so the habit is "played laptap", not one pool.
+    const played = streak(Object.keys(POOLS), puzzle.number);
     const card = summaryCard(
       summaryRows(game.state.results),
       game.state.total,
@@ -176,12 +180,28 @@ async function main(): Promise<void> {
             resend: finish,
           }
         : null,
+      countdownLine(played > 1 ? `${played}-day streak. ` : '', 'Next five'),
+      otherPoolButton(),
     );
-    if (played > 1) {
-      const note = card.querySelector('.card-sub');
-      if (note) note.textContent = `${played}-day streak. New mountains at midnight.`;
-    }
     render(card);
+  }
+
+  /**
+   * The other pass's five are built every day and only a query string away,
+   * so finishing one set offers the other — twice the game, no new content.
+   */
+  function otherPoolButton(): HTMLElement | null {
+    const other = pool.id === 'ikon' ? POOLS.epic : pool.id === 'epic' ? POOLS.ikon : null;
+    if (!other) return null;
+    const done = finishedTotal(`${other.id}:${puzzle.number}`);
+    const link = el('a', {
+      class: 'btn btn-ghost',
+      text: done === null ? `PLAY TODAY'S ${other.shareName.toUpperCase()} FIVE` : `${other.shareName.toUpperCase()} TODAY · ${done}`,
+    });
+    const params = new URLSearchParams(window.location.search);
+    params.set('pool', other.id);
+    link.href = `./?${params}`;
+    return link;
   }
 
   game.subscribe((state) => {

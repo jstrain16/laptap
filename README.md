@@ -19,7 +19,12 @@ npm run dev          # http://localhost:5188
 | `?pool=usa` | **All USA** — every US downhill area worth asking about | 497 | state / ski region | 49 days |
 
 The two pass pools **alternate day by day** — puzzle #1 (Oct 1) was Ikon, #2 Epic, and so on. `?pool=`
-forces any of the three. Each pool keeps its own daily result and streak.
+forces any of the three. Each pool keeps its own daily result; the streak counts days played in
+any of them, and the summary offers the other pass's five for the same day.
+
+The summary also carries a live countdown to the next puzzle, and the page ships a link preview
+(`public/og.jpg`, Open Graph and Twitter tags in `index.html`) and home-screen icons with a web
+manifest, so a shared link shows a card and "Add to Home Screen" gets a real icon.
 
 **Every pin is the mountain's summit**, not its town: the top station of the area's highest lift,
 taken from OpenSkiMap's lifts data. Vail is Blue Sky Basin at 3,526m, not Vail Village; Zermatt is

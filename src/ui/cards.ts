@@ -307,7 +307,9 @@ export function summaryCard(
   total: number,
   onShare: () => Promise<boolean>,
   leaderboard: LeaderboardHooks | null = null,
-  footer = 'A new set of five mountains at midnight.',
+  footer: string | HTMLElement = 'A new set of five mountains at midnight.',
+  /** A second thing to do from here — the other pass's five, for instance. */
+  also: HTMLElement | null = null,
 ): HTMLElement {
   const rows = el(
     'div',
@@ -344,8 +346,8 @@ export function summaryCard(
       { class: 'summary-total', text: String(total) },
       el('span', { text: ` / ${MAX_SCORE}` }),
     ),
-    el('div', { class: 'card-actions' }, share),
+    el('div', { class: 'card-actions' }, share, also),
     leaderboard ? leaderboardSection(leaderboard) : null,
-    el('p', { class: 'card-sub', text: footer }),
+    typeof footer === 'string' ? el('p', { class: 'card-sub', text: footer }) : footer,
   );
 }

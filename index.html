@@ -6,7 +6,26 @@
     <title>laptap — Daily Ski Mountain Game</title>
     <meta name="description" content="A daily geography game. Five ski mountains, one map, tap where you think they are." />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#060910" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛷️</text></svg>" />
+    <!-- Home-screen icon and manifest: an emoji favicon is ignored by "Add to Home Screen". -->
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="laptap" />
+    <!-- Link previews in iMessage, WhatsApp, Slack and the rest. The image is absolute on
+         purpose: previews are fetched by the chat app, not the page. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="laptap" />
+    <meta property="og:title" content="laptap — a daily ski mountain game" />
+    <meta property="og:description" content="Five ski mountains, one globe. Tap where you think they are. New five every day." />
+    <meta property="og:url" content="https://laptap.xyz/" />
+    <meta property="og:image" content="https://laptap.xyz/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="laptap — a daily ski mountain game" />
+    <meta name="twitter:description" content="Five ski mountains, one globe. Tap where you think they are." />
+    <meta name="twitter:image" content="https://laptap.xyz/og.jpg" />
   </head>
   <body>
     <div id="map" aria-label="Map of the United States"></div>
